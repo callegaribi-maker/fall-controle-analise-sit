@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+# numpy 2.0 compatibility
+_trapz = getattr(np, 'trapezoid', getattr(np, 'trapz', None))
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -157,12 +159,14 @@ def sig_stars(p):
     return "ns"
 
 def trapz(x, y):
-    return float(np.trapz(y, x))
+    return float(_trapz(y, x))
 
 def phase_mask(fase, s, e):
     return (fase >= s) & (fase < e)
 
 # ── Shared plotly layout ──────────────────────────────────────────────────────
+CHART_SIZE = 580  # square side in pixels
+
 def base_layout(**kw):
     return dict(
         paper_bgcolor="white",
@@ -170,6 +174,8 @@ def base_layout(**kw):
         font=dict(family="Arial, sans-serif", color="#374151", size=12),
         legend=dict(bgcolor="white", bordercolor="#e0e4ef", borderwidth=1),
         margin=dict(l=60, r=40, t=50, b=50),
+        width=CHART_SIZE,
+        height=CHART_SIZE,
         **kw,
     )
 
@@ -237,7 +243,7 @@ with tab1:
                            yshift=10, xshift=4)
 
     fig.update_layout(
-        **base_layout(height=430),
+        **base_layout(),
         xaxis_title="Fase normalizada",
         yaxis_title="Aceleração resultante (m/s²)",
         yaxis2_title="Diferença (m/s²)",
@@ -245,12 +251,12 @@ with tab1:
     )
     fig.update_yaxes(title_text="Diferença CTRL−FALL (m/s²)",
                      showgrid=False, secondary_y=True)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=False)
 
     # ── Metrics cards ──
     r_val   = float(np.corrcoef(fm, cm)[0, 1])
     rmse_v  = float(np.sqrt(np.mean(diff**2)))
-    area_v  = float(np.trapz(np.abs(diff), fase))
+    area_v  = float(_trapz(np.abs(diff), fase))
     max_d   = float(np.max(np.abs(diff)))
     max_d_f = float(fase[np.argmax(np.abs(diff))])
 
@@ -406,9 +412,9 @@ with tab3:
         fig2.add_vline(x=xv, line=dict(color="#9e9e9e", dash="dash", width=1))
         fig2.add_annotation(x=xv, y=1.02, yref="paper", text=lbl, showarrow=False,
                             font=dict(size=9, color="#757575"), xshift=4)
-    fig2.update_layout(**base_layout(height=360),
+    fig2.update_layout(**base_layout(),
                        xaxis_title="Fase normalizada", yaxis_title="z-score")
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, use_container_width=False)
 
     # Significant regions
     regions, in_r, start_i, max_z = [], False, 0, 0.0
@@ -455,12 +461,12 @@ with tab3:
                    secondary_y=True)
     for xv in [P2, P3]:
         fig3.add_vline(x=xv, line=dict(color="#9e9e9e", dash="dash", width=1))
-    fig3.update_layout(**base_layout(height=300),
+    fig3.update_layout(**base_layout(),
                        xaxis_title="Fase normalizada",
                        yaxis_title="Δ m/s²",
                        yaxis2_title="Δ%")
     fig3.update_yaxes(showgrid=False, secondary_y=True)
-    st.plotly_chart(fig3, use_container_width=True)
+    st.plotly_chart(fig3, use_container_width=False)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -485,11 +491,11 @@ with tab4:
                           name="CONTROLE", marker_color=C_CTRL, boxmean=True,
                           boxpoints="all", jitter=0.4, pointpos=0,
                           marker=dict(size=7, opacity=0.7)))
-    fig4.update_layout(**base_layout(height=360),
+    fig4.update_layout(**base_layout(),
                        yaxis_title=metric_sel, showlegend=False)
     col_chart, col_stats = st.columns([3, 2])
     with col_chart:
-        st.plotly_chart(fig4, use_container_width=True)
+        st.plotly_chart(fig4, use_container_width=False)
     with col_stats:
         U, p = stats.mannwhitneyu(fa_s, ca_s, alternative="two-sided")
         d = cohen_d(fa_s, ca_s)
@@ -536,12 +542,12 @@ with tab4:
                                    theta=labels + [labels[0]],
                                    fill="toself", name="CONTROLE",
                                    line_color=C_CTRL, fillcolor=C_CTRL_BG))
-    fig5.update_layout(**base_layout(height=400),
+    fig5.update_layout(**base_layout(),
                        polar=dict(bgcolor="#f9fafb",
                                   radialaxis=dict(visible=True, range=[0, 1],
                                                   gridcolor="#e0e4ef"),
                                   angularaxis=dict(gridcolor="#e0e4ef")))
-    st.plotly_chart(fig5, use_container_width=True)
+    st.plotly_chart(fig5, use_container_width=False)
 
     st.markdown("---")
 
@@ -566,11 +572,11 @@ with tab4:
                           marker_color=C_FALL, opacity=0.8))
     fig6.add_trace(go.Bar(name="CONTROLE", x=cv_labels, y=cv_ctrl,
                           marker_color=C_CTRL, opacity=0.8))
-    fig6.update_layout(**base_layout(height=340),
+    fig6.update_layout(**base_layout(),
                        barmode="group",
                        yaxis_title="CV (%)",
                        xaxis=dict(tickangle=-40, tickfont=dict(size=10)))
-    st.plotly_chart(fig6, use_container_width=True)
+    st.plotly_chart(fig6, use_container_width=False)
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("---")
