@@ -636,15 +636,16 @@ def render_metrics_analysis(df_sub, g1_name, g2_name, key_suffix=""):
     render_cv_bar(results, g1_s, g2_s)
     st.markdown("---")
     st.markdown("#### 📝 Texto para Artigo — Comparação Estatística")
-    txt_boxes(apa_m_stats(n1,n2,g1_s,g2_s,len(results)),
-              apa_r_stats(results,g1_s,g2_s), ks+"_stat_txt")
+    three_boxes(apa_m_stats(n1,n2,g1_s,g2_s,len(results)),
+                apa_r_stats(results,g1_s,g2_s),
+                apa_i_stats(results,g1_s,g2_s), ks+"_stat_txt")
     st.markdown("---")
     st.markdown("#### 📝 Texto para Artigo — Dispersão Individual")
-    # boxplot text uses last selected metric from render_boxplot — use general description
-    txt_boxes(apa_m_boxplot(n1,n2,g1_s,g2_s),
-              "See the statistics reported above for the selected metric. "
-              "Individual data points are displayed in the box plot above. "
-              "Report values as: median [IQR] or mean ± SD per group.", ks+"_box_txt")
+    three_boxes(apa_m_boxplot(n1,n2,g1_s,g2_s),
+                "See the statistics reported above for the selected metric. "
+                "Individual data points are displayed in the box plot above. "
+                "Report values as: median [IQR] or mean ± SD per group.",
+                apa_i_boxplot(g1_s,g2_s), ks+"_box_txt")
 
     # Análises avançadas ficam na aba dedicada (render_advanced_tab)
 
@@ -675,15 +676,18 @@ def get_phys(metric):
             return val
     return "a kinematic metric reflecting sit-to-stand movement quality and neuromuscular control"
 
-def txt_boxes(methods, results_txt, ks):
+def three_boxes(methods, results_txt, interp_txt, ks):
     st.markdown("---")
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     with c1:
-        st.markdown("**📝 Methods — APA Style**")
-        st.text_area("", value=methods, height=280, key=f"m_{ks}", label_visibility="collapsed")
+        st.markdown("""<div style="background:#dbeafe;border-left:4px solid #1d4ed8;padding:6px 12px;border-radius:4px;font-weight:700;color:#1e40af;margin-bottom:6px;font-size:0.88rem">📝 Métodos (APA)</div>""", unsafe_allow_html=True)
+        st.text_area("", value=methods, height=260, key=f"m_{ks}", label_visibility="collapsed")
     with c2:
-        st.markdown("**📊 Results + Physiological Interpretation — APA Style**")
-        st.text_area("", value=results_txt, height=280, key=f"r_{ks}", label_visibility="collapsed")
+        st.markdown("""<div style="background:#dcfce7;border-left:4px solid #15803d;padding:6px 12px;border-radius:4px;font-weight:700;color:#166534;margin-bottom:6px;font-size:0.88rem">📊 Resultados (APA)</div>""", unsafe_allow_html=True)
+        st.text_area("", value=results_txt, height=260, key=f"r_{ks}", label_visibility="collapsed")
+    with c3:
+        st.markdown("""<div style="background:#ffedd5;border-left:4px solid #c2410c;padding:6px 12px;border-radius:4px;font-weight:700;color:#9a3412;margin-bottom:6px;font-size:0.88rem">🧠 Interpretação Clínica</div>""", unsafe_allow_html=True)
+        st.text_area("", value=interp_txt, height=260, key=f"i_{ks}", label_visibility="collapsed")
 
 # ── APA generators ────────────────────────────────────────────────────────────
 def apa_m_stats(n1, n2, g1_s, g2_s, nm):
@@ -716,12 +720,7 @@ def apa_r_stats(results, g1_s, g2_s):
                 lines.append(f"  • {r['col']}: {g2_s} showed {direction} values "
                              f"({r['bm']:.3f} ± {r['bstd']:.3f} vs. {r['am']:.3f} ± {r['astd']:.3f}), "
                              f"U = {r['U']:.0f}, p_adj = {r['padj']:.3f}, "
-                             f"d = {r['d']:.3f} [95% CI: {r['d_lo']:.3f}, {r['d_hi']:.3f}]. "
-                             f"This reflects differences in {get_phys(r['col'])}.")
-    lines.append(f"\nCollectively, these findings suggest that {g2_s} exhibit altered kinematic "
-                 f"profiles during the sit-to-stand task, particularly in metrics related to "
-                 f"momentum generation, movement smoothness, and postural stabilization, which "
-                 f"may reflect underlying neuromuscular deficits associated with fall risk.")
+                             f"d = {r['d']:.3f} [95% CI: {r['d_lo']:.3f}, {r['d_hi']:.3f}].")
     return "\n".join(lines)
 
 def apa_m_roc(n1, n2, g1_s, g2_s):
@@ -745,14 +744,10 @@ def apa_r_roc(roc_data, g1_s, g2_s):
             lines.append(f"\n{label}:")
             for r in grp:
                 lines.append(f"  • {r['col']}: AUC = {r['auc']:.3f}, sensitivity = {r['sens']:.2f}, "
-                             f"specificity = {r['spec']:.2f}, optimal threshold = {r['threshold']:.3f}. "
-                             f"Physiologically, this metric reflects {get_phys(r['col'])}, "
-                             f"suggesting its utility as a fall-risk screening marker.")
+                             f"specificity = {r['spec']:.2f}, optimal threshold = {r['threshold']:.3f}.")
     if srt:
         b = srt[0]
-        lines.append(f"\nOverall, {b['col']} demonstrated the highest discriminative capacity "
-                     f"(AUC = {b['auc']:.3f}), identifying it as the most informative single "
-                     f"kinematic variable for fall-risk classification in this cohort.")
+        lines.append(f"\nBest classifier: {b['col']} (AUC = {b['auc']:.3f}).")
     return "\n".join(lines)
 
 def apa_m_forest(n1, n2, g1_s, g2_s, nm):
@@ -773,11 +768,7 @@ def apa_r_forest(results, g1_s, g2_s):
     for r in top3:
         direction = "higher" if r["bm"]>r["am"] else "lower"
         lines.append(f"  • {r['col']}: d = {r['d']:.3f} [95% CI: {r['d_lo']:.3f}, {r['d_hi']:.3f}], "
-                     f"{effect_label(r['d'])} effect. {g2_s} showed {direction} values, "
-                     f"reflecting differences in {get_phys(r['col'])}.")
-    lines.append(f"\nThe forest plot provides a comprehensive overview of effect magnitude and "
-                 f"precision, facilitating identification of the most clinically meaningful "
-                 f"kinematic differences between fallers and non-fallers during sit-to-stand.")
+                     f"{effect_label(r['d'])} effect. {g2_s} showed {direction} values.")
     return "\n".join(lines)
 
 def apa_m_pca(n1, n2, g1_s, g2_s, nm):
@@ -797,11 +788,6 @@ def apa_r_pca(pca_var, top_loadings, g1_s, g2_s):
         lines.append(f"\nThe three metrics with highest absolute loadings on PC1 were:")
         for metric, loading in top_loadings:
             lines.append(f"  • {metric} (loading = {loading:.3f}): reflects {get_phys(metric)}.")
-    lines.append(f"\nVisual inspection of the PC score plot revealed partial separation between "
-                 f"{g2_s} and {g1_s} clusters, indicating that sit-to-stand kinematics carry "
-                 f"multivariate discriminant information beyond individual metric comparisons. "
-                 f"The dominant principal components likely represent latent motor patterns related "
-                 f"to force production magnitude (PC1) and movement timing/smoothness (PC2).")
     return "\n".join(lines)
 
 def apa_m_cluster(n1, n2, g1_s, g2_s, nm):
@@ -817,14 +803,6 @@ def apa_r_cluster(acc, n1, n2, g1_s, g2_s):
     lines = [f"Ward's hierarchical clustering achieved {q} unsupervised recovery of the known "
              f"group structure, correctly assigning {acc:.1f}% of participants to their respective "
              f"groups ({g1_s}, n = {n1}; {g2_s}, n = {n2}) without label information."]
-    interp = ("This suggests that the multivariate sit-to-stand kinematic profile naturally "
-              "segregates into distinct movement patterns broadly corresponding to faller and "
-              "non-faller status, providing unsupervised evidence for the discriminative capacity "
-              "of these metrics." if acc>=70 else
-              "The limited recovery suggests considerable kinematic overlap between groups, "
-              "possibly reflecting heterogeneity in fall mechanisms or compensatory strategies "
-              "within the faller cohort.")
-    lines.append(f"\n{interp}")
     return "\n".join(lines)
 
 def apa_m_score(n1, n2, g1_s, g2_s):
@@ -844,12 +822,6 @@ def apa_r_score(score_res, g1_s, g2_s, n_met):
              f"demonstrated {'statistically significant' if p<0.05 else 'non-significant'} "
              f"group separation (Mann-Whitney U = {U:.0f}, p = {p:.3f}, d = {d:.3f} "
              f"[{effect_label(d)} effect])."]
-    if p<0.05:
-        lines.append(f"\nThe composite score effectively distinguished {g2_s} from {g1_s}, "
-                     f"suggesting that a weighted combination of sit-to-stand kinematic metrics "
-                     f"provides a clinically meaningful index of fall risk. This multi-metric "
-                     f"approach leverages complementary information across movement phases and "
-                     f"axes, potentially offering superior discriminative power over any single metric.")
     return "\n".join(lines)
 
 def apa_m_lda(n1, n2, g1_s, g2_s, nm):
@@ -870,12 +842,7 @@ def apa_r_lda(acc, top_w, g1_s, g2_s):
     if top_w:
         lines.append(f"\nThe three most influential discriminant features were:")
         for metric, weight in top_w:
-            lines.append(f"  • {metric} (weight = {weight:.3f}): reflects {get_phys(metric)}.")
-    lines.append(f"\nThese results suggest that sit-to-stand kinematics contain sufficient "
-                 f"multivariate discriminant information to classify fallers with clinically "
-                 f"meaningful accuracy. The identified discriminant features represent the "
-                 f"kinematic dimensions most relevant for distinguishing pathological from "
-                 f"typical movement strategies during sit-to-stand.")
+            lines.append(f"  • {metric} (weight = {weight:.3f})")
     return "\n".join(lines)
 
 def apa_m_bootstrap(n1, n2, g1_s, g2_s, n_perm):
@@ -933,11 +900,6 @@ def apa_r_curves(r_val, rmse_v, area_v, max_d, max_d_f, rows, P2, P3):
                 f"Δ = {delta} m/s² ({pct}), RMSE = {rmse_ph} m/s², r = {corr_ph}. "
                 f"{'Higher CTRL acceleration during this phase may reflect greater momentum generation capacity.' if delta.startswith('+') else 'Lower CTRL acceleration during this phase may reflect more controlled movement.' if delta.startswith('-') else ''}"
             )
-    lines.append(
-        "\nThese curve-level differences provide complementary information to scalar metric "
-        "comparisons, capturing the temporal dynamics of between-group differences across "
-        "the entire sit-to-stand movement cycle."
-    )
     return "\n".join(lines)
 
 # ── APA: SPM ─────────────────────────────────────────────────────────────────
@@ -971,11 +933,6 @@ def apa_r_spm(regs, fase, z_arr, P2, P3):
             f"peak z = {mz:.3f} ({direction}). "
             f"{'Higher CTRL acceleration in this region may reflect greater momentum generation or more efficient weight transfer.' if mz>0 else 'Higher FALL acceleration in this region may reflect compensatory movement strategies or reduced movement smoothness.'}"
         )
-    lines.append(
-        "\nThese temporal windows of significant difference highlight the specific "
-        "movement phases where faller and non-faller kinematics diverge most, "
-        "providing mechanistic insight beyond global curve similarity metrics."
-    )
     return "\n".join(lines)
 
 # ── APA: Análise da Forma ─────────────────────────────────────────────────────
@@ -1033,6 +990,298 @@ def apa_m_boxplot(n1, n2, g1_s, g2_s):
             f"Statistical comparison used the Mann-Whitney U test (Mann & Whitney, 1947) "
             f"with effect size quantified by Cohen's d (Cohen, 1988).")
 
+# ══════════════════════════════════════════════════════════════════════════════
+# INTERPRETAÇÃO CLÍNICA (Português) — P1=preparo, P2=levantar, P3=sentar
+# ══════════════════════════════════════════════════════════════════════════════
+def _phase_name(col_lower):
+    if "p1" in col_lower: return "P1 (preparo)"
+    if "p2" in col_lower: return "P2 (levantar)"
+    if "p3" in col_lower: return "P3 (sentar)"
+    return None
+
+def _motor_meaning(col, direction, g2_s):
+    c = col.lower()
+    if "tempo" in c:
+        return (f"Movimento mais lento em {g2_s}, indicando menor eficiência neuromuscular."
+                if direction=="maior" else
+                f"Movimento mais rápido em {g2_s}, podendo indicar menor controle postural.")
+    if "jerk" in c:
+        return (f"Movimento menos suave em {g2_s}, refletindo padrão motor fragmentado."
+                if direction=="maior" else
+                f"Movimento mais suave em {g2_s}, indicando maior coordenação motora.")
+    if "range" in c:
+        return (f"Menor amplitude de aceleração em {g2_s}, sugerindo menor produção de força."
+                if direction=="menor" else
+                f"Maior amplitude de aceleração em {g2_s} nessa fase.")
+    if "acc max" in c or "acc_max" in c:
+        return (f"Menor pico em {g2_s} indica menor potência de extensão dos membros inferiores."
+                if direction=="menor" else
+                f"Maior pico em {g2_s} pode refletir estratégia compensatória.")
+    if "frequencia" in c or "freq" in c:
+        return f"Frequência dominante alterada em {g2_s}, podendo refletir fadiga ou padrão oscilatório compensatório."
+    return f"Diferença no controle motor de {g2_s} durante essa fase."
+
+def apa_i_stats(results, g1_s, g2_s):
+    sig = sorted([r for r in results if r.get("padj",1)<0.05], key=lambda r: abs(r["d"]), reverse=True)
+    if not sig:
+        return (f"Nenhuma diferença significativa detectada entre {g2_s} e {g1_s}.\n"
+                f"Os grupos apresentam perfis cinemáticos similares nas três fases: "
+                f"preparo (P1), levantar (P2) e sentar (P3).")
+    lines = [f"{len(sig)} métrica(s) significativa(s). Principais achados:\n"]
+    for r in sig[:6]:
+        direction = "maior" if r["bm"] > r["am"] else "menor"
+        ph = _phase_name(r["col"].lower())
+        ph_str = f" [{ph}]" if ph else ""
+        meaning = _motor_meaning(r["col"], direction, g2_s)
+        lines.append(f"• {r['col']}{ph_str}: {meaning}")
+    lines.append(f"\nClinicamente, as diferenças sugerem comprometimento no recrutamento muscular "
+                 f"e controle postural do grupo {g2_s} durante o sentar e levantar, o que pode "
+                 f"estar associado ao risco de quedas.")
+    return "\n".join(lines)
+
+def apa_i_boxplot(g1_s, g2_s):
+    return (f"Alta variabilidade intragrupo pode indicar heterogeneidade na estratégia motora.\n\n"
+            f"• Sobreposição entre os boxplots reduz o poder discriminativo da métrica.\n"
+            f"• Outliers podem representar sujeitos com padrão motor atípico ou fadiga.\n\n"
+            f"Nas fases P1 (preparo), P2 (levantar) e P3 (sentar), maior variabilidade em "
+            f"{g2_s} pode refletir instabilidade postural ou inconsistência neuromuscular.")
+
+def apa_i_roc(roc_data, g1_s, g2_s):
+    if not roc_data:
+        return "Dados insuficientes para interpretação clínica da curva ROC."
+    srt = sorted(roc_data, key=lambda x: x["auc"], reverse=True)
+    exc = [r for r in srt if r["auc"] >= 0.80]
+    good = [r for r in srt if 0.70 <= r["auc"] < 0.80]
+    lines = [f"Capacidade de cada métrica em discriminar {g2_s} de {g1_s}:\n"]
+    if exc:
+        lines.append("Excelente (AUC ≥ 0,80) — potencial como marcador clínico:")
+        for r in exc[:3]:
+            ph = _phase_name(r["col"].lower())
+            ph_str = f" [{ph}]" if ph else ""
+            lines.append(f"  • {r['col']}{ph_str}: AUC={r['auc']:.3f}, "
+                         f"sensib.={r['sens']:.2f}, espec.={r['spec']:.2f}. "
+                         f"Threshold ótimo = {r['threshold']:.3f}.")
+    if good:
+        lines.append(f"\nAceitável (0,70–0,79):")
+        for r in good[:3]:
+            ph = _phase_name(r["col"].lower())
+            ph_str = f" [{ph}]" if ph else ""
+            lines.append(f"  • {r['col']}{ph_str}: AUC={r['auc']:.3f}")
+    if not exc and not good:
+        lines.append("Nenhuma métrica isolada com AUC ≥ 0,70. A discriminação requer "
+                     "combinação de métricas das três fases (P1, P2, P3).")
+    lines.append("\nO threshold ótimo pode ser usado como ponto de corte clínico para "
+                 "triagem de risco de quedas.")
+    return "\n".join(lines)
+
+def apa_i_forest(results, g1_s, g2_s):
+    large = [r for r in results if abs(r["d"]) >= 0.8]
+    lines = [f"Magnitude e precisão das diferenças entre {g2_s} e {g1_s}:\n"]
+    if large:
+        lines.append("Efeitos grandes (|d| ≥ 0,8) — maior relevância clínica:")
+        for r in large[:4]:
+            direction = "maior" if r["bm"] > r["am"] else "menor"
+            ph = _phase_name(r["col"].lower())
+            ph_str = f" [{ph}]" if ph else ""
+            meaning = _motor_meaning(r["col"], direction, g2_s)
+            lines.append(f"  • {r['col']}{ph_str} (d={r['d']:.2f}): {meaning}")
+    else:
+        lines.append("Nenhum efeito grande detectado. Diferenças de magnitude pequena a moderada "
+                     "indicam diferenças sutis no padrão motor entre os grupos.")
+    lines.append("\nIC 95% que não cruzam zero indicam efeitos robustos e independentes de "
+                 "flutuações amostrais — os indicadores mais confiáveis de diferença real.")
+    return "\n".join(lines)
+
+def apa_i_pca(pca_var, top_loadings, g1_s, g2_s):
+    if pca_var is None:
+        return "PCA não pôde ser calculada com os dados disponíveis."
+    lines = [f"Componentes latentes representando padrões motores globais:\n"]
+    lines.append(f"• PC1 ({pca_var[0]*100:.1f}% variância): eixo principal de diferenciação. "
+                 f"Reflete magnitude de força e momentum durante P1→P2→P3.")
+    lines.append(f"• PC2 ({pca_var[1]*100:.1f}%): variações secundárias em timing e suavidade "
+                 f"do movimento.")
+    if top_loadings:
+        lines.append("\nMétricas de maior influência em PC1:")
+        for metric, loading in top_loadings[:3]:
+            ph = _phase_name(metric.lower())
+            ph_str = f" [{ph}]" if ph else ""
+            lines.append(f"  • {metric}{ph_str} (loading={loading:.3f})")
+    lines.append(f"\nSeparação visual entre {g2_s} e {g1_s} no espaço PC1–PC2 indica padrões "
+                 f"motores globalmente distintos nas fases de preparo, levantar e sentar, "
+                 f"além das diferenças observadas em métricas individuais.")
+    return "\n".join(lines)
+
+def apa_i_cluster(acc, g1_s, g2_s):
+    if acc >= 80:
+        qual = "excelente"
+        msg = ("Os perfis de P1, P2 e P3 se organizam naturalmente em grupos distintos. "
+               "Forte evidência de que o padrão cinemático global diferencia os grupos.")
+    elif acc >= 70:
+        qual = "boa"
+        msg = ("Os padrões cinemáticos tendem a se segregar, mas com alguma sobreposição "
+               "entre indivíduos nas fases de transição.")
+    elif acc >= 60:
+        qual = "moderada"
+        msg = ("Sobreposição considerável nos padrões motores. Possível heterogeneidade "
+               "nas estratégias compensatórias dentro do grupo de quedas.")
+    else:
+        qual = "limitada"
+        msg = ("Alta sobreposição cinemática entre grupos. Diferenças individuais predominam "
+               "sobre as diferenças grupais.")
+    return (f"Recuperação {qual} dos grupos ({acc:.1f}%) sem supervisão.\n\n{msg}\n\n"
+            f"Alta recuperação indica que métricas combinadas de P1 (preparo), P2 (levantar) "
+            f"e P3 (sentar) formam um perfil motor suficientemente distinto para classificação automática.")
+
+def apa_i_score(score_res, n_met, g1_s, g2_s):
+    if score_res is None:
+        return (f"Score composto não calculado (sem métricas significativas).\n\n"
+                f"Nenhuma métrica de P1, P2 ou P3 apresenta diferença suficiente para "
+                f"compor um índice de risco discriminativo nesta amostra.")
+    U, p, d = score_res
+    if p < 0.05:
+        return (f"Score composto de {n_met} métrica(s) discrimina significativamente os grupos "
+                f"(U={U:.0f}, p={p:.3f}, d={d:.3f}).\n\n"
+                f"A combinação ponderada de métricas das fases P1 (preparo), P2 (levantar) e "
+                f"P3 (sentar) amplifica as diferenças cinemáticas individuais.\n\n"
+                f"Aplicação clínica potencial: o score pode ser calculado em tempo real durante "
+                f"o teste de sentar e levantar para triagem de risco de quedas.")
+    else:
+        return (f"Score composto não atingiu significância (p={p:.3f}).\n\n"
+                f"As diferenças nas fases P1, P2 e P3 não se somam a um índice discriminativo "
+                f"consistente nesta amostra. Recomenda-se avaliar métricas por fase separadamente.")
+
+def apa_i_lda(acc, top_w, g1_s, g2_s):
+    if acc is None:
+        return "LDA não pôde ser calculada com os dados disponíveis."
+    lines = [f"Combinação linear de métricas que maximiza a separação entre grupos:\n"]
+    lines.append(f"• Acurácia de {acc:.1f}% reflete o poder discriminativo conjunto das "
+                 f"métricas das fases P1, P2 e P3.")
+    if top_w:
+        lines.append("\nMétricas mais discriminantes:")
+        for metric, weight in top_w[:3]:
+            direction = "→ perfil FALL" if weight > 0 else "→ perfil CTRL"
+            ph = _phase_name(metric.lower())
+            ph_str = f" [{ph}]" if ph else ""
+            lines.append(f"  • {metric}{ph_str} (peso={weight:.3f}) {direction}")
+    lines.append("\nAtenção: acurácia de treino pode superestimar desempenho real. "
+                 "Validação cruzada em amostras independentes é necessária antes de aplicação clínica.")
+    return "\n".join(lines)
+
+def apa_i_bootstrap():
+    return ("O teste de permutação e bootstrap avaliam a robustez das diferenças:\n\n"
+            "• p_permutação < 0,05: a diferença supera o acaso — fortalece a evidência.\n"
+            "• IC bootstrap excluindo zero: efeito estável sob reamostragem.\n\n"
+            "Métricas com ambos os critérios satisfeitos representam os indicadores mais "
+            "confiáveis de diferença real nas fases P1 (preparo), P2 (levantar) e P3 (sentar).\n\n"
+            "Especialmente relevante para amostras pequenas, onde testes assintóticos podem "
+            "ser menos confiáveis.")
+
+def apa_i_curves(rows, P2, P3, r_val):
+    lines = ["Interpretação fisiológica por fase:\n"]
+    phase_map = {"P1": ("preparo", "deslocamento anterior do tronco e transferência de peso antes do descolamento das nádegas"),
+                 "P2": ("levantar", "produção de força pelos extensores de quadril e joelho"),
+                 "P3": ("sentar", "controle excêntrico do quadríceps durante retorno à cadeira")}
+    for row in rows:
+        ph = row.get("Fase","")
+        delta_str = row.get("Δ","0")
+        try: delta = float(delta_str.replace("+",""))
+        except: delta = 0
+        ph_label, ph_physio = phase_map.get(ph, (ph, "controle motor"))
+        if delta > 0.001:
+            interp = (f"CTRL > FALL: maior {ph_physio}. "
+                      f"Menor aceleração em FALL pode indicar déficit de força ou cautela excessiva.")
+        elif delta < -0.001:
+            interp = (f"FALL > CTRL: maior aceleração em FALL durante {ph_label}. "
+                      f"Pode indicar estratégia compensatória ou movimento mais brusco.")
+        else:
+            interp = f"Grupos similares nesta fase."
+        lines.append(f"• {ph} ({ph_label}) — Δ={delta_str}: {interp}")
+    overall = ("Alta correlação (r>0,9): padrão temporal preservado; diferenças são de magnitude."
+               if r_val > 0.9 else
+               "Correlação moderada: diferenças em magnitude E padrão temporal entre grupos.")
+    lines.append(f"\n{overall}")
+    return "\n".join(lines)
+
+def apa_i_spm(regs, fase, z_arr, P2, P3):
+    if not regs:
+        return ("Nenhuma região temporal significativa.\n\n"
+                "Os perfis de aceleração são estatisticamente equivalentes ao longo de todas "
+                "as fases: preparo (P1), levantar (P2) e sentar (P3).\n\n"
+                "Possível interpretação: diferenças quantitativas existem (métricas escalares), "
+                "mas sem alteração no padrão temporal do movimento.")
+    lines = [f"{len(regs)} região(ões) com diferença significativa (|z|>1,96):\n"]
+    for i, (si, ei, mz) in enumerate(regs):
+        f_start = fase[si]
+        if f_start < P2:
+            ph_name = "P1 (preparo)"
+            if mz > 0:
+                interp = ("CTRL>FALL: CTRL apresenta maior deslocamento/momentum na fase de "
+                          "preparo, indicando melhor preparação postural para o levante.")
+            else:
+                interp = ("FALL>CTRL: Maior aceleração em FALL no preparo pode refletir "
+                          "estratégia compensatória para compensar fraqueza nos extensores.")
+        elif f_start < P3:
+            ph_name = "P2 (levantar)"
+            if mz > 0:
+                interp = ("CTRL>FALL: Maior força/momentum durante o levantar no grupo controle. "
+                          "Déficit em FALL indica menor potência dos extensores de joelho/quadril.")
+            else:
+                interp = ("FALL>CTRL: Elevação mais brusca ou compensatória em FALL, "
+                          "com possível menor controle da trajetória do centro de massa.")
+        else:
+            ph_name = "P3 (sentar)"
+            if mz > 0:
+                interp = ("CTRL>FALL: Maior controle excêntrico no retorno à cadeira em CTRL. "
+                          "FALL apresenta descida com menor frenagem muscular.")
+            else:
+                interp = ("FALL>CTRL: Descida mais acelerada em FALL, indicando menor ativação "
+                          "excêntrica e possível 'queda' sobre a cadeira.")
+        direction = "CTRL>FALL" if mz>0 else "FALL>CTRL"
+        lines.append(f"• #{i+1} — {ph_name} (fase {fase[si]:.3f}–{fase[ei]:.3f}), "
+                     f"z_máx={mz:.2f} ({direction}):\n  {interp}")
+    lines.append("\nEssas janelas temporais identificam os momentos precisos onde o controle "
+                 "motor difere, permitindo direcionar intervenções para fases específicas.")
+    return "\n".join(lines)
+
+def apa_i_shape(cv_f, cv_c, ov_pct, zc, pl, pf, pc_):
+    cv_f_mean = float(np.nanmean(cv_f)); cv_c_mean = float(np.nanmean(cv_c))
+    ov_mean = float(np.mean(ov_pct))
+    lines = ["Qualidade e consistência do movimento por aspecto:\n"]
+    # CV
+    more_var = "FALL" if cv_f_mean > cv_c_mean else "CTRL"
+    if more_var == "FALL":
+        cv_interp = ("FALL mais variável: inconsistência no padrão motor ao longo das fases. "
+                     "Variabilidade elevada em P1 e P2 é associada ao risco de quedas.")
+    else:
+        cv_interp = ("CTRL mais variável: diversidade de estratégias motoras no grupo saudável.")
+    lines.append(f"• CV%: FALL={cv_f_mean:.1f}% vs CTRL={cv_c_mean:.1f}%\n  {cv_interp}")
+    # Overlap
+    if ov_mean < 30:
+        ov_interp = "Baixa sobreposição: FALL e CTRL ocupam regiões de aceleração distintas — boa separabilidade clínica."
+    elif ov_mean < 60:
+        ov_interp = "Sobreposição moderada: variabilidade individual cria zonas de transição entre grupos."
+    else:
+        ov_interp = "Alta sobreposição: diferenças sutis. Discriminação requer combinação de métricas."
+    lines.append(f"\n• Sobreposição ±1DP: {ov_mean:.1f}% média\n  {ov_interp}")
+    # Cross-correlation
+    if abs(zc) > 0.9:
+        xc_interp = "Padrão temporal idêntico entre grupos; diferenças são de amplitude (força), não de timing."
+    elif abs(zc) > 0.7:
+        xc_interp = "Padrão temporal similar, mas com diferenças na forma da curva nas transições P1→P2→P3."
+    else:
+        xc_interp = "Diferenças tanto na amplitude quanto no padrão temporal de aceleração."
+    lag_str = f" Deslocamento de {abs(pl)} amostras entre grupos." if pl != 0 else " Sem deslocamento temporal."
+    lines.append(f"\n• Cross-correlação (lag=0): r={zc:.4f}{lag_str}\n  {xc_interp}")
+    # Peaks
+    if len(pf) != len(pc_):
+        pk_interp = (f"Número diferente de picos (FALL:{len(pf)}, CTRL:{len(pc_)}): "
+                     f"estratégias distintas de geração de momentum nas fases P1, P2 e P3.")
+    else:
+        pk_interp = (f"Mesmo número de picos ({len(pf)}). Diferenças são de magnitude, não de estrutura temporal.")
+    lines.append(f"\n• Picos: FALL={len(pf)}, CTRL={len(pc_)}\n  {pk_interp}")
+    return "\n".join(lines)
+
+
 # ── Render advanced analyses tab ──────────────────────────────────────────────
 def render_advanced_tab(df_sub, g1_name, g2_name, ks):
     mc, g1_df, g2_df = prep_data(df_sub, g1_name, g2_name)
@@ -1045,8 +1294,9 @@ def render_advanced_tab(df_sub, g1_name, g2_name, ks):
     # ── Stats table overview + APA text
     st.markdown("### 📊 Comparação Estatística Geral")
     render_stats_table(results, g1_s, g2_s, ks+"_adv")
-    txt_boxes(apa_m_stats(n1,n2,g1_s,g2_s,len(results)),
-              apa_r_stats(results,g1_s,g2_s), ks+"_stat")
+    three_boxes(apa_m_stats(n1,n2,g1_s,g2_s,len(results)),
+                apa_r_stats(results,g1_s,g2_s),
+                apa_i_stats(results,g1_s,g2_s), ks+"_stat")
 
     st.markdown("---")
 
@@ -1059,15 +1309,17 @@ def render_advanced_tab(df_sub, g1_name, g2_name, ks):
             roc_data.append({"col":r["col"],"auc":auc,"threshold":ot,"sens":sens,"spec":spec})
         except: pass
     render_roc(results, g1_s, g2_s, ks+"_roc")
-    txt_boxes(apa_m_roc(n1,n2,g1_s,g2_s), apa_r_roc(roc_data,g1_s,g2_s), ks+"_roc_t")
+    three_boxes(apa_m_roc(n1,n2,g1_s,g2_s), apa_r_roc(roc_data,g1_s,g2_s),
+                apa_i_roc(roc_data,g1_s,g2_s), ks+"_roc_t")
 
     st.markdown("---")
 
     # ── Forest Plot
     st.markdown("### 🔴 Forest Plot — d de Cohen com IC 95%")
     render_forest(results, g1_s, g2_s)
-    txt_boxes(apa_m_forest(n1,n2,g1_s,g2_s,len(results)),
-              apa_r_forest(results,g1_s,g2_s), ks+"_for")
+    three_boxes(apa_m_forest(n1,n2,g1_s,g2_s,len(results)),
+                apa_r_forest(results,g1_s,g2_s),
+                apa_i_forest(results,g1_s,g2_s), ks+"_for")
 
     st.markdown("---")
 
@@ -1080,8 +1332,9 @@ def render_advanced_tab(df_sub, g1_name, g2_name, ks):
     pca_scores, pca_var, pca_Vt = pca_2d(X)
     top_pc1 = sorted(zip(cols_use,pca_Vt[0]),key=lambda x:abs(x[1]),reverse=True)[:3] if pca_Vt is not None else []
     render_pca(results,g1_df,g2_df,g1_s,g2_s,g1_name,g2_name,ks+"_pca")
-    txt_boxes(apa_m_pca(n1,n2,g1_s,g2_s,len(cols_use)),
-              apa_r_pca(pca_var,top_pc1,g1_s,g2_s), ks+"_pca_t")
+    three_boxes(apa_m_pca(n1,n2,g1_s,g2_s,len(cols_use)),
+                apa_r_pca(pca_var,top_pc1,g1_s,g2_s),
+                apa_i_pca(pca_var,top_pc1,g1_s,g2_s), ks+"_pca_t")
 
     st.markdown("---")
 
@@ -1101,8 +1354,9 @@ def render_advanced_tab(df_sub, g1_name, g2_name, ks):
         Z=linkage(Xs,method="ward"); pred=fcluster(Z,t=2,criterion="maxclust")-1
         cl_acc=max(np.mean(pred==y),np.mean((1-pred)==y))*100
     except: cl_acc=50.0
-    txt_boxes(apa_m_cluster(n1,n2,g1_s,g2_s,len(cols_use)),
-              apa_r_cluster(cl_acc,n1,n2,g1_s,g2_s), ks+"_cl_t")
+    three_boxes(apa_m_cluster(n1,n2,g1_s,g2_s,len(cols_use)),
+                apa_r_cluster(cl_acc,n1,n2,g1_s,g2_s),
+                apa_i_cluster(cl_acc,g1_s,g2_s), ks+"_cl_t")
 
     st.markdown("---")
 
@@ -1126,8 +1380,9 @@ def render_advanced_tab(df_sub, g1_name, g2_name, ks):
             d_sc=cohen_d(s1.values,s2.values)
             score_res=(U,p,d_sc)
         except: pass
-    txt_boxes(apa_m_score(n1,n2,g1_s,g2_s),
-              apa_r_score(score_res,g1_s,g2_s,len(sig_r)), ks+"_rs_t")
+    three_boxes(apa_m_score(n1,n2,g1_s,g2_s),
+                apa_r_score(score_res,g1_s,g2_s,len(sig_r)),
+                apa_i_score(score_res,len(sig_r),g1_s,g2_s), ks+"_rs_t")
 
     st.markdown("---")
 
@@ -1140,16 +1395,18 @@ def render_advanced_tab(df_sub, g1_name, g2_name, ks):
         _,w,_,acc=lda_2g(Xs,y)
         top_w=sorted(zip(cols_use,w),key=lambda x:abs(x[1]),reverse=True)[:3] if w is not None else []
     except: acc=None; top_w=[]
-    txt_boxes(apa_m_lda(n1,n2,g1_s,g2_s,len(cols_use)),
-              apa_r_lda(acc,top_w,g1_s,g2_s), ks+"_lda_t")
+    three_boxes(apa_m_lda(n1,n2,g1_s,g2_s,len(cols_use)),
+                apa_r_lda(acc,top_w,g1_s,g2_s),
+                apa_i_lda(acc,top_w,g1_s,g2_s), ks+"_lda_t")
 
     st.markdown("---")
 
     # ── Bootstrap
     st.markdown("### 🟢 Bootstrap dos p-values + IC de Cohen's d")
     render_bootstrap(results, ks+"_boot")
-    txt_boxes(apa_m_bootstrap(n1,n2,g1_s,g2_s,1000),
-              apa_r_bootstrap(), ks+"_boot_t")
+    three_boxes(apa_m_bootstrap(n1,n2,g1_s,g2_s,1000),
+                apa_r_bootstrap(),
+                apa_i_bootstrap(), ks+"_boot_t")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # HEADER + SOURCE SELECTOR
@@ -1270,9 +1527,10 @@ with tab1:
             "Δ":f"{da:+.4f}","Δ%":f"{dr:+.1f}%","RMSE":f"{float(np.sqrt(np.mean((cp-fp)**2))):.4f}",
             "r":f"{float(np.corrcoef(fp,cp)[0,1]):.4f}"}))
     st.dataframe(pd.DataFrame(rows),use_container_width=True,hide_index=True)
-    txt_boxes(apa_m_curves(N_FALL,N_CTRL),
-              apa_r_curves(r_val,rmse_v,area_v,max_d,max_d_f,rows,P2,P3),
-              "emb_curves")
+    three_boxes(apa_m_curves(N_FALL,N_CTRL),
+                apa_r_curves(r_val,rmse_v,area_v,max_d,max_d_f,rows,P2,P3),
+                apa_i_curves(rows,P2,P3,r_val),
+                "emb_curves")
 
 with tab3:
     st.markdown("""<div class="info-box"><strong>SPM-like z-test</strong>:
@@ -1312,9 +1570,10 @@ with tab3:
             "Direção":"CTRL>FALL" if mz>0 else "FALL>CTRL",
             "Fase":"P1" if fase[s]<P2 else "P2" if fase[s]<P3 else "P3"}
             for i,(s,e,mz) in enumerate(regs)]),use_container_width=True,hide_index=True)
-    txt_boxes(apa_m_spm(N_FALL,N_CTRL),
-              apa_r_spm(regs,fase,z_arr,P2,P3),
-              "emb_spm")
+    three_boxes(apa_m_spm(N_FALL,N_CTRL),
+                apa_r_spm(regs,fase,z_arr,P2,P3),
+                apa_i_spm(regs,fase,z_arr,P2,P3),
+                "emb_spm")
 
 with tab5:
     st.markdown("### CV% ao longo da fase")
@@ -1377,9 +1636,10 @@ with tab5:
     with _c2:
         st.markdown("**Detecção de Picos**"); st.plotly_chart(fig_pk,use_container_width=False)
     has_ov = ov_abs > 0
-    txt_boxes(apa_m_shape(),
-              apa_r_shape(cv_f,cv_c,ov_pct,zc,pl,pf,pc_,fase,P2,P3,has_ov),
-              "emb_shape")
+    three_boxes(apa_m_shape(),
+                apa_r_shape(cv_f,cv_c,ov_pct,zc,pl,pf,pc_,fase,P2,P3,has_ov),
+                apa_i_shape(cv_f,cv_c,ov_pct,zc,pl,pf,pc_),
+                "emb_shape")
 
 with tab_adv:
     _mc_emb = [c for c in fall_ind.columns[1:]
