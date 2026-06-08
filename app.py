@@ -1083,7 +1083,7 @@ if use_upload:
                     with stat_tab:
                         render_metrics_analysis(df_dev, g1_name, g2_name, key_suffix=ks)
                     with adv_tab:
-                        render_advanced_tab(df_dev, g1_name, g2_name, key_suffix=ks+"_adv")
+                        render_advanced_tab(df_dev, g1_name, g2_name, ks=ks+"_adv")
     st.stop()
 
 
