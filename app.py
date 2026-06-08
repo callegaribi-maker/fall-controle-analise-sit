@@ -163,13 +163,23 @@ def bootstrap_d_ci(a, b, n=1000):
     return float(np.percentile(ds,2.5)), float(np.percentile(ds,97.5))
 
 # ── Data loaders ──────────────────────────────────────────────────────────────
+SKIP_LABELS = {"Mediana", "Q1 (25%)", "Q3 (75%)", "DP", "Média"}
+
 @st.cache_data
 def load_embedded():
     fc = pd.read_excel(DATA_DIR/"resultante_grupoFALL.xlsx",    sheet_name=0)
     cc = pd.read_excel(DATA_DIR/"resultante_grupoCONTROLE.xlsx", sheet_name=0)
     fm = pd.read_excel(DATA_DIR/"resultante_grupoFALL.xlsx",    sheet_name=1)
     cm = pd.read_excel(DATA_DIR/"resultante_grupoCONTROLE.xlsx", sheet_name=1)
-    return fc, cc, fm, cm
+    def load_ind(path):
+        df = pd.read_excel(path, sheet_name=0)
+        df = df[~df.iloc[:,0].isin(SKIP_LABELS)]
+        df = df[df.iloc[:,0].notna()]
+        df = df[df.iloc[:,0].apply(lambda x: isinstance(x, str))]
+        return df.reset_index(drop=True)
+    fall_ind = load_ind(DATA_DIR/"metricas_individuaisFALL.xlsx")
+    ctrl_ind = load_ind(DATA_DIR/"metricas_individuaisCONTROLE.xlsx")
+    return fc, cc, fm, cm, fall_ind, ctrl_ind
 
 def load_upload(file_bytes):
     xl = pd.ExcelFile(io.BytesIO(file_bytes))
@@ -355,7 +365,7 @@ def render_pca(results, g1_df, g2_df, g1_s, g2_s, g1_name, g2_name, ks):
     As métricas são reduzidas a 2 componentes principais. Cada ponto = 1 sujeito.
     Elipses = ±1DP. Barras = contribuição de cada métrica (loadings).
     </div>""", unsafe_allow_html=True)
-    cols_use = [r["col"] for r in results]
+    cols_use = [r["col"] for r in results if r["col"] in g1_df.columns and r["col"] in g2_df.columns]
     g1_X = g1_df[cols_use].apply(pd.to_numeric, errors="coerce").dropna()
     g2_X = g2_df[cols_use].apply(pd.to_numeric, errors="coerce").dropna()
     X    = pd.concat([g1_X, g2_X]).values
@@ -368,11 +378,11 @@ def render_pca(results, g1_df, g2_df, g1_s, g2_s, g1_name, g2_name, ks):
     for grp, col, name, label in [(0,C_CTRL,g1_s,g1_name),(1,C_FALL,g2_s,g2_name)]:
         idx  = y==grp; sc = scores[idx]
         # Scatter
-        subj_col = "SUJEITOS " if "SUJEITOS " in g1_df.columns else "SUJEITOS"
+        subj_col = next((c for c in ["SUJEITOS ","SUJEITOS"] if c in g1_df.columns), None)
         try:
             df_tmp = (g1_df if grp==0 else g2_df).reset_index(drop=True)
-            hover = df_tmp[subj_col].values[:len(sc)] if subj_col in df_tmp.columns else [""]*len(sc)
-        except: hover=[""]* len(sc)
+            hover = df_tmp[subj_col].values[:len(sc)] if subj_col and subj_col in df_tmp.columns else [f"S{i}" for i in range(len(sc))]
+        except: hover=[f"S{i}" for i in range(len(sc))]
         fig.add_trace(go.Scatter(x=sc[:,0],y=sc[:,1],mode="markers",
                                  name=name,marker=dict(color=col,size=9,opacity=0.8),
                                  text=hover, hovertemplate="<b>%{text}</b><br>PC1=%{x:.2f} PC2=%{y:.2f}<extra></extra>"))
@@ -432,13 +442,14 @@ def render_cluster(results, g1_df, g2_df, g1_name, g2_name, g1_s, g2_s, ks):
     Verifica se os dados se organizam naturalmente em FALL e CTRL.
     </div>""", unsafe_allow_html=True)
     cols_use = [r["col"] for r in results]
-    sub_col  = "SUJEITOS " if "SUJEITOS " in g1_df.columns else "SUJEITOS"
-    g1_X = g1_df[cols_use+[sub_col]].apply(lambda c: pd.to_numeric(c,errors="coerce") if c.name!=sub_col else c).dropna(subset=cols_use)
-    g2_X = g2_df[cols_use+[sub_col]].apply(lambda c: pd.to_numeric(c,errors="coerce") if c.name!=sub_col else c).dropna(subset=cols_use)
+    sub_col  = next((c for c in ["SUJEITOS ","SUJEITOS"] if c in g1_df.columns), None)
+    extra = [sub_col] if sub_col else []
+    g1_X = g1_df[cols_use+extra].apply(lambda c: pd.to_numeric(c,errors="coerce") if c.name!=sub_col else c).dropna(subset=cols_use)
+    g2_X = g2_df[cols_use+extra].apply(lambda c: pd.to_numeric(c,errors="coerce") if c.name!=sub_col else c).dropna(subset=cols_use)
     all_X  = pd.concat([g1_X,g2_X])
     X_mat  = all_X[cols_use].values.astype(float)
     true_y = np.array([0]*len(g1_X)+[1]*len(g2_X))
-    labels_subj = all_X[sub_col].astype(str).values if sub_col in all_X.columns else [str(i) for i in range(len(all_X))]
+    labels_subj = all_X[sub_col].astype(str).values if sub_col and sub_col in all_X.columns else [str(i) for i in range(len(all_X))]
     # Standardize
     mu=X_mat.mean(0); sd=X_mat.std(0); sd[sd<1e-10]=1
     Xs=(X_mat-mu)/sd
@@ -709,7 +720,7 @@ if use_upload:
 # ══════════════════════════════════════════════════════════════════════════════
 # MODO EMBUTIDO — curvas
 # ══════════════════════════════════════════════════════════════════════════════
-fall_curv, ctrl_curv, fall_mr, ctrl_mr = load_embedded()
+fall_curv, ctrl_curv, fall_mr, ctrl_mr, fall_ind, ctrl_ind = load_embedded()
 fase=fall_curv["Fase_norm"].values; fm=fall_curv["Média (m/s²)"].values
 fdp=fall_curv["DP (m/s²)"].values;  fhi=fall_curv["Média+DP (m/s²)"].values
 flo=fall_curv["Média-DP (m/s²)"].values
@@ -730,7 +741,7 @@ st.markdown(f"""<div style="margin-bottom:16px">
   <span class="badge badge-ctrl">CONTROLE n={N_CTRL}</span>
 </div>""", unsafe_allow_html=True)
 
-tab1,tab3,tab5=st.tabs(["📈 Curvas Resultantes","🔬 Análise Temporal (SPM)","🧬 Análise da Forma das Curvas"])
+tab1,tab3,tab5,tab_adv=st.tabs(["📈 Curvas Resultantes","🔬 Análise Temporal (SPM)","🧬 Análise da Forma das Curvas","🔬 Análises Avançadas"])
 
 with tab1:
     fig=make_subplots(specs=[[{"secondary_y":True}]])
@@ -857,6 +868,48 @@ with tab5:
     add_phase_lines(fig_pk,P2,P3)
     fig_pk.update_layout(**base_layout(h=430),xaxis_title="Fase normalizada",yaxis_title="Aceleração (m/s²)",hovermode="x unified")
     st.plotly_chart(fig_pk,use_container_width=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB ANÁLISES AVANÇADAS — modo embutido (usa metricas_individuais)
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_adv:
+    st.markdown("""<div class="info-box">
+    Análises baseadas nos dados individuais dos sujeitos (<em>metricas_individuais</em>).
+    Clique em cada seção para expandir.
+    </div>""", unsafe_allow_html=True)
+
+    # Prepara dados
+    _mc = [c for c in fall_ind.columns[1:]
+           if pd.to_numeric(fall_ind[c], errors='coerce').notna().sum() > 3]
+    _g1_s, _g2_s = "Controle", "Fall"
+    _results = compute_results(_mc, ctrl_ind, fall_ind)
+
+    if not _results:
+        st.warning("Dados individuais insuficientes.")
+    else:
+        with st.expander("🔴 Curvas ROC + AUC por métrica", expanded=False):
+            render_roc(_results, _g1_s, _g2_s, "emb_roc")
+
+        with st.expander("🔴 Forest Plot — d de Cohen com IC 95%", expanded=False):
+            render_forest(_results, _g1_s, _g2_s)
+
+        with st.expander("🔴 PCA — Análise de Componentes Principais", expanded=False):
+            render_pca(_results, ctrl_ind, fall_ind, _g1_s, _g2_s, "CONTROLE", "FALL", "emb_pca")
+
+        with st.expander("🟡 Heatmap de Correlação entre Métricas", expanded=False):
+            render_heatmap(_results, ctrl_ind, fall_ind, _g1_s, _g2_s)
+
+        with st.expander("🟡 Análise de Cluster Hierárquica", expanded=False):
+            render_cluster(_results, ctrl_ind, fall_ind, "CONTROLE", "FALL", _g1_s, _g2_s, "emb_cl")
+
+        with st.expander("🟡 Score Composto de Risco (Fall Risk Score)", expanded=False):
+            render_risk_score(_results, ctrl_ind, fall_ind, _g1_s, _g2_s, "CONTROLE", "FALL", "emb_rs")
+
+        with st.expander("🟢 LDA — Análise Discriminante Linear", expanded=False):
+            render_lda(_results, ctrl_ind, fall_ind, _g1_s, _g2_s, "emb_lda")
+
+        with st.expander("🟢 Bootstrap dos p-values + IC de Cohen's d", expanded=False):
+            render_bootstrap(_results, "emb_boot")
 
 st.markdown("---")
 st.markdown("<p style='font-size:0.78rem;color:#9e9e9e;text-align:center'>FALL vs CONTROLE · Mann-Whitney · Cohen's d · BH-FDR · SPM · ROC · PCA · LDA · Bootstrap</p>",unsafe_allow_html=True)
