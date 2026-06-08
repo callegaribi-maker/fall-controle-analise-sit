@@ -116,7 +116,7 @@ def compute_roc(scores_g2, scores_g1):
     fprs.append(1.0); tprs.append(1.0)
     fprs = np.array(fprs); tprs = np.array(tprs)
     idx  = np.argsort(fprs); fprs, tprs = fprs[idx], tprs[idx]
-    auc  = float(np.trapz(tprs, fprs))
+    auc  = float(np.trapezoid(tprs, fprs) if hasattr(np, 'trapezoid') else np.trapz(tprs, fprs))
     if auc < 0.5:
         auc = 1 - auc; fprs, tprs = 1-fprs[::-1], 1-tprs[::-1]
     j = tprs - fprs; oi = np.argmax(j)
@@ -741,7 +741,7 @@ st.markdown(f"""<div style="margin-bottom:16px">
   <span class="badge badge-ctrl">CONTROLE n={N_CTRL}</span>
 </div>""", unsafe_allow_html=True)
 
-tab1,tab3,tab5,tab_adv=st.tabs(["📈 Curvas Resultantes","🔬 Análise Temporal (SPM)","🧬 Análise da Forma das Curvas","🔬 Análises Avançadas"])
+tab1,tab3,tab5=st.tabs(["📈 Curvas Resultantes","🔬 Análise Temporal (SPM)","🧬 Análise da Forma das Curvas"])
 
 with tab1:
     fig=make_subplots(specs=[[{"secondary_y":True}]])
@@ -876,48 +876,6 @@ with tab5:
         ca.metric("r lag=0",f"{zc:.4f}"); cb.metric("r máx",f"{pc:.4f}"); cc.metric("Lag pico",f"{pl}")
     with _c2:
         st.markdown("**Detecção de Picos**"); st.plotly_chart(fig_pk,use_container_width=False)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB ANÁLISES AVANÇADAS — modo embutido (usa metricas_individuais)
-# ══════════════════════════════════════════════════════════════════════════════
-with tab_adv:
-    st.markdown("""<div class="info-box">
-    Análises baseadas nos dados individuais dos sujeitos (<em>metricas_individuais</em>).
-    Clique em cada seção para expandir.
-    </div>""", unsafe_allow_html=True)
-
-    # Prepara dados
-    _mc = [c for c in fall_ind.columns[1:]
-           if pd.to_numeric(fall_ind[c], errors='coerce').notna().sum() > 3]
-    _g1_s, _g2_s = "Controle", "Fall"
-    _results = compute_results(_mc, ctrl_ind, fall_ind)
-
-    if not _results:
-        st.warning("Dados individuais insuficientes.")
-    else:
-        with st.expander("🔴 Curvas ROC + AUC por métrica", expanded=False):
-            render_roc(_results, _g1_s, _g2_s, "emb_roc")
-
-        with st.expander("🔴 Forest Plot — d de Cohen com IC 95%", expanded=False):
-            render_forest(_results, _g1_s, _g2_s)
-
-        with st.expander("🔴 PCA — Análise de Componentes Principais", expanded=False):
-            render_pca(_results, ctrl_ind, fall_ind, _g1_s, _g2_s, "CONTROLE", "FALL", "emb_pca")
-
-        with st.expander("🟡 Heatmap de Correlação entre Métricas", expanded=False):
-            render_heatmap(_results, ctrl_ind, fall_ind, _g1_s, _g2_s)
-
-        with st.expander("🟡 Análise de Cluster Hierárquica", expanded=False):
-            render_cluster(_results, ctrl_ind, fall_ind, "CONTROLE", "FALL", _g1_s, _g2_s, "emb_cl")
-
-        with st.expander("🟡 Score Composto de Risco (Fall Risk Score)", expanded=False):
-            render_risk_score(_results, ctrl_ind, fall_ind, _g1_s, _g2_s, "CONTROLE", "FALL", "emb_rs")
-
-        with st.expander("🟢 LDA — Análise Discriminante Linear", expanded=False):
-            render_lda(_results, ctrl_ind, fall_ind, _g1_s, _g2_s, "emb_lda")
-
-        with st.expander("🟢 Bootstrap dos p-values + IC de Cohen's d", expanded=False):
-            render_bootstrap(_results, "emb_boot")
 
 st.markdown("---")
 st.markdown("<p style='font-size:0.78rem;color:#9e9e9e;text-align:center'>FALL vs CONTROLE · Mann-Whitney · Cohen's d · BH-FDR · SPM · ROC · PCA · LDA · Bootstrap</p>",unsafe_allow_html=True)
