@@ -635,30 +635,7 @@ def render_metrics_analysis(df_sub, g1_name, g2_name, key_suffix=""):
     st.markdown("#### 📉 CV% intragrupal por métrica")
     render_cv_bar(results, g1_s, g2_s)
 
-    # ── Advanced analyses (expanders)
-    with st.expander("🔴 Curvas ROC + AUC por métrica", expanded=False):
-        render_roc(results, g1_s, g2_s, ks)
-
-    with st.expander("🔴 Forest Plot — d de Cohen com IC 95%", expanded=False):
-        render_forest(results, g1_s, g2_s)
-
-    with st.expander("🔴 PCA — Análise de Componentes Principais", expanded=False):
-        render_pca(results, g1_df, g2_df, g1_s, g2_s, g1_name, g2_name, ks)
-
-    with st.expander("🟡 Heatmap de Correlação entre Métricas", expanded=False):
-        render_heatmap(results, g1_df, g2_df, g1_s, g2_s)
-
-    with st.expander("🟡 Análise de Cluster Hierárquica", expanded=False):
-        render_cluster(results, g1_df, g2_df, g1_name, g2_name, g1_s, g2_s, ks)
-
-    with st.expander("🟡 Score Composto de Risco (Fall Risk Score)", expanded=False):
-        render_risk_score(results, g1_df, g2_df, g1_s, g2_s, g1_name, g2_name, ks)
-
-    with st.expander("🟢 LDA — Análise Discriminante Linear", expanded=False):
-        render_lda(results, g1_df, g2_df, g1_s, g2_s, ks)
-
-    with st.expander("🟢 Bootstrap dos p-values + IC de Cohen's d", expanded=False):
-        render_bootstrap(results, ks)
+    # Análises avançadas ficam na aba dedicada (render_advanced_tab)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1111,7 +1088,7 @@ st.markdown(f"""<div style="margin-bottom:16px">
   <span class="badge badge-ctrl">CONTROLE n={N_CTRL}</span>
 </div>""", unsafe_allow_html=True)
 
-tab1,tab3,tab5=st.tabs(["📈 Curvas Resultantes","🔬 Análise Temporal (SPM)","🧬 Análise da Forma das Curvas"])
+tab1,tab3,tab5,tab_adv=st.tabs(["📈 Curvas Resultantes","🔬 Análise Temporal (SPM)","🧬 Análise da Forma das Curvas","🔬 Análises Avançadas + Texto APA"])
 
 with tab1:
     fig=make_subplots(specs=[[{"secondary_y":True}]])
@@ -1246,6 +1223,14 @@ with tab5:
         ca.metric("r lag=0",f"{zc:.4f}"); cb.metric("r máx",f"{pc:.4f}"); cc.metric("Lag pico",f"{pl}")
     with _c2:
         st.markdown("**Detecção de Picos**"); st.plotly_chart(fig_pk,use_container_width=False)
+
+with tab_adv:
+    _mc_emb = [c for c in fall_ind.columns[1:]
+               if pd.to_numeric(fall_ind[c], errors='coerce').notna().sum() > 3]
+    render_advanced_tab(
+        pd.concat([ctrl_ind.assign(Grupo="CONTROLE"), fall_ind.assign(Grupo="FALL")]),
+        "CONTROLE", "FALL", ks="emb"
+    )
 
 st.markdown("---")
 st.markdown("<p style='font-size:0.78rem;color:#9e9e9e;text-align:center'>FALL vs CONTROLE · Mann-Whitney · Cohen's d · BH-FDR · SPM · ROC · PCA · LDA · Bootstrap</p>",unsafe_allow_html=True)
