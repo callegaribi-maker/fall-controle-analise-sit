@@ -753,17 +753,21 @@ with tab1:
     fig.add_trace(go.Scatter(x=fase,y=cm,name="CONTROLE (média)",line=dict(color=C_CTRL,width=2.5)),secondary_y=False)
     fig.add_trace(go.Scatter(x=fase,y=diff,name="Diferença CTRL−FALL",line=dict(color=C_DIFF,width=1.8,dash="dot")),secondary_y=True)
     add_phase_lines(fig,P2,P3)
-    fig.update_layout(**base_layout(h=460),xaxis_title="Fase normalizada",
+    fig.update_layout(**base_layout(h=SQ,w=SQ),xaxis_title="Fase normalizada",
                       yaxis_title="Aceleração resultante (m/s²)",hovermode="x unified")
     fig.update_yaxes(title_text="Diferença CTRL−FALL (m/s²)",showgrid=False,secondary_y=True)
-    st.plotly_chart(fig,use_container_width=True)
+    _c1,_c2=st.columns([1,1])
+    with _c1: st.plotly_chart(fig,use_container_width=False)
     r_val=float(np.corrcoef(fm,cm)[0,1]); rmse_v=float(np.sqrt(np.mean(diff**2)))
     area_v=float(np.trapezoid(np.abs(diff),fase)); max_d=float(np.max(np.abs(diff)))
     max_d_f=float(fase[np.argmax(np.abs(diff))])
-    c1,c2,c3,c4=st.columns(4)
-    c1.metric("Correlação (r)",f"{r_val:.4f}"); c2.metric("RMSE",f"{rmse_v:.4f} m/s²")
-    c3.metric("Área entre curvas",f"{area_v:.4f}"); c4.metric("Dif. máxima",f"{max_d:.4f}",help=f"Fase≈{max_d_f:.3f}")
-    st.markdown("---"); st.markdown("**Diferença por fase**")
+    with _c2:
+        st.markdown("**Métricas de comparação**")
+        st.metric("Correlação (r)",f"{r_val:.4f}")
+        st.metric("RMSE",f"{rmse_v:.4f} m/s²")
+        st.metric("Área entre curvas",f"{area_v:.4f}")
+        st.metric("Dif. máxima",f"{max_d:.4f}",help=f"Fase≈{max_d_f:.3f}")
+    st.markdown("**Diferença por fase**")
     rows=[]
     for ph,s,e in [("P1",0,P2),("P2",P2,P3),("P3",P3,1.0)]:
         mk=phase_mask(fase,s,e); fp,cp=fm[mk],cm[mk]
@@ -784,8 +788,17 @@ with tab3:
     fig2.add_hline(y=1.96,line=dict(color=C_DIFF,dash="dash",width=1.5),annotation_text="z=+1.96",annotation_position="right")
     fig2.add_hline(y=-1.96,line=dict(color=C_DIFF,dash="dash",width=1.5),annotation_text="z=−1.96",annotation_position="right")
     add_phase_lines(fig2,P2,P3)
-    fig2.update_layout(**base_layout(h=380),xaxis_title="Fase normalizada",yaxis_title="z-score")
-    st.plotly_chart(fig2,use_container_width=True)
+    fig2.update_layout(**base_layout(h=SQ,w=SQ),xaxis_title="Fase normalizada",yaxis_title="z-score")
+    fig3=make_subplots(specs=[[{"secondary_y":True}]])
+    fig3.add_trace(go.Scatter(x=fase,y=diff,name="Δ abs (m/s²)",line=dict(color=C_DIFF,width=2),
+                              fill="tozeroy",fillcolor="rgba(245,158,11,0.1)"),secondary_y=False)
+    fig3.add_trace(go.Scatter(x=fase,y=d_pct,name="Δ rel (%)",line=dict(color="#7c3aed",width=1.5,dash="dot")),secondary_y=True)
+    add_phase_lines(fig3,P2,P3)
+    fig3.update_layout(**base_layout(h=SQ,w=SQ),xaxis_title="Fase normalizada",yaxis_title="Δ m/s²")
+    fig3.update_yaxes(title_text="Δ%",showgrid=False,secondary_y=True)
+    _c1,_c2=st.columns([1,1])
+    with _c1: st.plotly_chart(fig2,use_container_width=False)
+    with _c2: st.plotly_chart(fig3,use_container_width=False)
     regs,in_r,si,mz=[],False,0,0.0
     for i,z in enumerate(z_arr):
         if abs(z)>1.96:
@@ -802,15 +815,6 @@ with tab3:
             "Direção":"CTRL>FALL" if mz>0 else "FALL>CTRL",
             "Fase":"P1" if fase[s]<P2 else "P2" if fase[s]<P3 else "P3"}
             for i,(s,e,mz) in enumerate(regs)]),use_container_width=True,hide_index=True)
-    st.markdown("---")
-    fig3=make_subplots(specs=[[{"secondary_y":True}]])
-    fig3.add_trace(go.Scatter(x=fase,y=diff,name="Δ abs (m/s²)",line=dict(color=C_DIFF,width=2),
-                              fill="tozeroy",fillcolor="rgba(245,158,11,0.1)"),secondary_y=False)
-    fig3.add_trace(go.Scatter(x=fase,y=d_pct,name="Δ rel (%)",line=dict(color="#7c3aed",width=1.5,dash="dot")),secondary_y=True)
-    add_phase_lines(fig3,P2,P3)
-    fig3.update_layout(**base_layout(h=320),xaxis_title="Fase normalizada",yaxis_title="Δ m/s²")
-    fig3.update_yaxes(title_text="Δ%",showgrid=False,secondary_y=True)
-    st.plotly_chart(fig3,use_container_width=True)
 
 with tab5:
     st.markdown("### CV% ao longo da fase")
@@ -820,10 +824,8 @@ with tab5:
     fig_cv.add_trace(go.Scatter(x=fase,y=cv_f,name="FALL CV%",line=dict(color=C_FALL,width=2)))
     fig_cv.add_trace(go.Scatter(x=fase,y=cv_c,name="CONTROLE CV%",line=dict(color=C_CTRL,width=2)))
     add_phase_lines(fig_cv,P2,P3)
-    fig_cv.update_layout(**base_layout(h=340),xaxis_title="Fase normalizada",yaxis_title="CV (%)",hovermode="x unified")
-    st.plotly_chart(fig_cv,use_container_width=True)
-    st.markdown("---")
-    st.markdown("### Sobreposição dos Envelopes ±1DP")
+    fig_cv.update_layout(**base_layout(h=SQ,w=SQ),xaxis_title="Fase normalizada",yaxis_title="CV (%)",hovermode="x unified")
+
     ov_abs=np.maximum(0,np.minimum(fhi,chi)-np.maximum(flo,clo))
     union=np.maximum(fhi,chi)-np.minimum(flo,clo)
     ov_pct=np.where(union>0,ov_abs/union*100,0.0)
@@ -834,13 +836,17 @@ with tab5:
     fig_ov.add_trace(go.Scatter(x=fase,y=cm,name="CTRL",line=dict(color=C_CTRL,width=2)),row=1,col=1)
     fig_ov.add_trace(go.Bar(x=fase,y=ov_pct,marker_color=[f"rgba(229,57,53,{0.4+0.6*(1-v/100):.2f})" if v<50 else f"rgba(0,137,123,{0.3+0.7*(v/100):.2f})" for v in ov_pct],showlegend=False),row=2,col=1)
     for xv in [P2,P3]: fig_ov.add_vline(x=xv,line=dict(color="#9e9e9e",dash="dash",width=1))
-    fig_ov.update_layout(**base_layout(h=500),hovermode="x unified")
+    fig_ov.update_layout(**base_layout(h=SQ,w=SQ),hovermode="x unified")
     fig_ov.update_yaxes(title_text="Aceleração (m/s²)",row=1,col=1)
     fig_ov.update_yaxes(title_text="Sobreposição (%)",row=2,col=1,range=[0,105])
     fig_ov.update_xaxes(title_text="Fase normalizada",row=2,col=1)
-    st.plotly_chart(fig_ov,use_container_width=True)
+    _c1,_c2=st.columns([1,1])
+    with _c1:
+        st.markdown("**CV% por grupo**"); st.plotly_chart(fig_cv,use_container_width=False)
+    with _c2:
+        st.markdown("**Sobreposição ±1DP**"); st.plotly_chart(fig_ov,use_container_width=False)
+
     st.markdown("---")
-    st.markdown("### Cross-Correlação entre Curvas Médias")
     fm_n=(fm-fm.mean())/(fm.std()+1e-10); cm_n=(cm-cm.mean())/(cm.std()+1e-10)
     xcorr=correlate(fm_n,cm_n,mode="full")/len(fm); lags=correlation_lags(len(fm),len(cm),mode="full")
     pi=int(np.argmax(xcorr)); pl=lags[pi]; pc=float(xcorr[pi]); zc=float(xcorr[len(fm)-1])
@@ -848,12 +854,8 @@ with tab5:
     fig_xc.add_trace(go.Scatter(x=lags,y=xcorr,line=dict(color="#1a73e8",width=2),name="Cross-correlação"))
     fig_xc.add_vline(x=0,line=dict(color="#9e9e9e",dash="dash",width=1.2),annotation_text="Lag=0",annotation_position="top right")
     fig_xc.add_vline(x=pl,line=dict(color=C_DIFF,dash="dot",width=1.5),annotation_text=f"Pico lag={pl}",annotation_position="top left")
-    fig_xc.update_layout(**base_layout(h=340),xaxis_title="Lag (amostras)",yaxis_title="Correlação normalizada")
-    st.plotly_chart(fig_xc,use_container_width=True)
-    ca,cb,cc=st.columns(3)
-    ca.metric("r em lag=0",f"{zc:.4f}"); cb.metric("r máximo",f"{pc:.4f}"); cc.metric("Lag do pico",f"{pl} amostras")
-    st.markdown("---")
-    st.markdown("### Detecção de Picos")
+    fig_xc.update_layout(**base_layout(h=SQ,w=SQ),xaxis_title="Lag (amostras)",yaxis_title="Correlação normalizada")
+
     cp,cd=st.columns(2)
     with cp: prom=st.slider("Proeminência mínima (m/s²)",0.1,3.0,0.5,0.1)
     with cd: mdist=st.slider("Distância mínima (amostras)",5,50,15)
@@ -866,8 +868,14 @@ with tab5:
     if len(pf): fig_pk.add_trace(go.Scatter(x=fase[pf],y=fm[pf],mode="markers",marker=dict(color=C_FALL,size=10,symbol="triangle-up",line=dict(color="white",width=1.5)),name="Picos FALL"))
     if len(pc_): fig_pk.add_trace(go.Scatter(x=fase[pc_],y=cm[pc_],mode="markers",marker=dict(color=C_CTRL,size=10,symbol="triangle-up",line=dict(color="white",width=1.5)),name="Picos CTRL"))
     add_phase_lines(fig_pk,P2,P3)
-    fig_pk.update_layout(**base_layout(h=430),xaxis_title="Fase normalizada",yaxis_title="Aceleração (m/s²)",hovermode="x unified")
-    st.plotly_chart(fig_pk,use_container_width=True)
+    fig_pk.update_layout(**base_layout(h=SQ,w=SQ),xaxis_title="Fase normalizada",yaxis_title="Aceleração (m/s²)",hovermode="x unified")
+    _c1,_c2=st.columns([1,1])
+    with _c1:
+        st.markdown("**Cross-Correlação**"); st.plotly_chart(fig_xc,use_container_width=False)
+        ca,cb,cc=st.columns(3)
+        ca.metric("r lag=0",f"{zc:.4f}"); cb.metric("r máx",f"{pc:.4f}"); cc.metric("Lag pico",f"{pl}")
+    with _c2:
+        st.markdown("**Detecção de Picos**"); st.plotly_chart(fig_pk,use_container_width=False)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB ANÁLISES AVANÇADAS — modo embutido (usa metricas_individuais)
