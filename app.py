@@ -634,6 +634,17 @@ def render_metrics_analysis(df_sub, g1_name, g2_name, key_suffix=""):
     st.markdown("---")
     st.markdown("#### 📉 CV% intragrupal por métrica")
     render_cv_bar(results, g1_s, g2_s)
+    st.markdown("---")
+    st.markdown("#### 📝 Texto para Artigo — Comparação Estatística")
+    txt_boxes(apa_m_stats(n1,n2,g1_s,g2_s,len(results)),
+              apa_r_stats(results,g1_s,g2_s), ks+"_stat_txt")
+    st.markdown("---")
+    st.markdown("#### 📝 Texto para Artigo — Dispersão Individual")
+    # boxplot text uses last selected metric from render_boxplot — use general description
+    txt_boxes(apa_m_boxplot(n1,n2,g1_s,g2_s),
+              "See the statistics reported above for the selected metric. "
+              "Individual data points are displayed in the box plot above. "
+              "Report values as: median [IQR] or mean ± SD per group.", ks+"_box_txt")
 
     # Análises avançadas ficam na aba dedicada (render_advanced_tab)
 
@@ -886,6 +897,142 @@ def apa_r_bootstrap():
             "(p_perm = X.XXX). Bootstrap 95% CI for Cohen's d [X.XX, X.XX] excluded zero, "
             "supporting the stability of the effect estimate under resampling.'")
 
+# ── APA: Curvas Resultantes ───────────────────────────────────────────────────
+def apa_m_curves(n_fall, n_ctrl):
+    return (f"Mean ± standard deviation (SD) acceleration resultant curves were computed "
+            f"for the faller group (FALL, n = {n_fall}) and the non-faller control group "
+            f"(CTRL, n = {n_ctrl}) across normalized movement phases (0–1). "
+            f"Curve similarity was quantified using (1) Pearson's correlation coefficient (r) "
+            f"between group mean curves, (2) root mean square error (RMSE, m/s²), and "
+            f"(3) the area between mean curves computed via trapezoidal integration. "
+            f"Phase-specific analyses were conducted for three biomechanically defined phases: "
+            f"P1 (initiation), P2 (transition/seat-off), and P3 (stabilization), "
+            f"delimited by the mean phase boundaries across groups.")
+
+def apa_r_curves(r_val, rmse_v, area_v, max_d, max_d_f, rows, P2, P3):
+    lines = [
+        f"The mean acceleration resultant curves of FALL and CTRL groups showed "
+        f"{'high' if r_val>0.9 else 'moderate' if r_val>0.7 else 'low'} overall similarity "
+        f"(r = {r_val:.4f}, RMSE = {rmse_v:.4f} m/s²). "
+        f"The area between curves was {area_v:.4f} m/s², indicating "
+        f"{'minimal' if area_v<0.5 else 'moderate' if area_v<2 else 'substantial'} "
+        f"accumulated difference across the full movement cycle. "
+        f"Maximum instantaneous difference was {max_d:.4f} m/s² at normalized phase ≈ {max_d_f:.3f}."
+    ]
+    if rows:
+        lines.append("\nPhase-specific analysis revealed:")
+        for r in rows:
+            ph = r['Fase']
+            delta = r.get('Δ','')
+            pct   = r.get('Δ%','')
+            rmse_ph = r.get('RMSE','')
+            corr_ph = r.get('r','')
+            ph_name = "initiation" if ph=="P1" else "transitional" if ph=="P2" else "stabilization"
+            lines.append(
+                f"  • {ph} ({ph_name}): FALL = {r.get('FALL','')}, CTRL = {r.get('CTRL','')} m/s², "
+                f"Δ = {delta} m/s² ({pct}), RMSE = {rmse_ph} m/s², r = {corr_ph}. "
+                f"{'Higher CTRL acceleration during this phase may reflect greater momentum generation capacity.' if delta.startswith('+') else 'Lower CTRL acceleration during this phase may reflect more controlled movement.' if delta.startswith('-') else ''}"
+            )
+    lines.append(
+        "\nThese curve-level differences provide complementary information to scalar metric "
+        "comparisons, capturing the temporal dynamics of between-group differences across "
+        "the entire sit-to-stand movement cycle."
+    )
+    return "\n".join(lines)
+
+# ── APA: SPM ─────────────────────────────────────────────────────────────────
+def apa_m_spm(n_fall, n_ctrl):
+    return (f"A Statistical Parametric Mapping-inspired point-by-point z-test was performed "
+            f"to identify time intervals with statistically significant between-group differences "
+            f"in acceleration resultant across the normalized movement cycle (Friston et al., 1994; "
+            f"Pataky et al., 2013). At each normalized time point, a z-statistic was computed as: "
+            f"z = (μ_CTRL − μ_FALL) / √(σ²_CTRL/n_CTRL + σ²_FALL/n_FALL), "
+            f"where μ and σ² represent the group mean and variance at that time point, "
+            f"n_CTRL = {n_ctrl} and n_FALL = {n_fall}. "
+            f"Time intervals with |z| > 1.96 were considered statistically significant (α = 0.05, "
+            f"two-tailed). Note: this analysis does not account for temporal autocorrelation; "
+            f"for formal SPM inference, spm1d software (Pataky, 2012) is recommended.")
+
+def apa_r_spm(regs, fase, z_arr, P2, P3):
+    if not regs:
+        return ("The point-by-point z-test revealed no time intervals with statistically "
+                "significant between-group differences in acceleration resultant (|z| ≤ 1.96 "
+                "throughout the normalized movement cycle), suggesting broadly similar "
+                "temporal acceleration profiles between fallers and non-fallers.")
+    lines = [f"Point-by-point z-test analysis identified {len(regs)} region(s) with "
+             f"statistically significant between-group differences in acceleration resultant (|z| > 1.96):"]
+    for i, (si, ei, mz) in enumerate(regs):
+        ph = "P1 (initiation)" if fase[si]<P2 else "P2 (transition)" if fase[si]<P3 else "P3 (stabilization)"
+        direction = "CTRL > FALL" if mz>0 else "FALL > CTRL"
+        dur = fase[ei]-fase[si]
+        lines.append(
+            f"  • Region #{i+1}: normalized phase {fase[si]:.4f}–{fase[ei]:.4f} "
+            f"(duration = {dur:.4f}; located in {ph}), "
+            f"peak z = {mz:.3f} ({direction}). "
+            f"{'Higher CTRL acceleration in this region may reflect greater momentum generation or more efficient weight transfer.' if mz>0 else 'Higher FALL acceleration in this region may reflect compensatory movement strategies or reduced movement smoothness.'}"
+        )
+    lines.append(
+        "\nThese temporal windows of significant difference highlight the specific "
+        "movement phases where faller and non-faller kinematics diverge most, "
+        "providing mechanistic insight beyond global curve similarity metrics."
+    )
+    return "\n".join(lines)
+
+# ── APA: Análise da Forma ─────────────────────────────────────────────────────
+def apa_m_shape():
+    return ("Movement quality and curve shape were characterized using four complementary analyses. "
+            "(1) Coefficient of Variation (CV%): intragroup variability at each normalized time point "
+            "was quantified as CV(t) = SD(t)/|mean(t)| × 100%, capturing where within the movement "
+            "cycle each group is most variable. "
+            "(2) Envelope overlap: the proportional overlap between ±1 SD bands of both groups at "
+            "each time point was computed as overlap = max(0, min(hi_FALL,hi_CTRL)−max(lo_FALL,lo_CTRL)) "
+            "/ (max(hi_FALL,hi_CTRL)−min(lo_FALL,lo_CTRL)) × 100%; 0% = complete separation, "
+            "100% = complete overlap. "
+            "(3) Cross-correlation: Pearson cross-correlation between standardized mean curves was "
+            "computed across all lag values to assess temporal alignment and shape similarity. "
+            "(4) Peak analysis: local maxima in each group's mean curve were identified using "
+            "prominence-based peak detection; peak amplitude and timing were compared between groups.")
+
+def apa_r_shape(cv_f, cv_c, ov_pct, zc, pl, peaks_f, peaks_c, fase, P2, P3, has_overlap):
+    lines = []
+    # CV
+    cv_f_mean = float(np.nanmean(cv_f)); cv_c_mean = float(np.nanmean(cv_c))
+    more_var = "FALL" if cv_f_mean>cv_c_mean else "CTRL"
+    lines.append(f"(1) CV% analysis: mean intragroup variability across the full movement cycle "
+                 f"was {cv_f_mean:.1f}% for FALL and {cv_c_mean:.1f}% for CTRL, "
+                 f"indicating that the {more_var} group exhibited greater temporal variability. "
+                 f"Elevated CV% may reflect reduced motor consistency and increased movement-to-movement "
+                 f"variability, which are associated with fall risk.")
+    # Overlap
+    ov_mean = float(np.mean(ov_pct))
+    pct_sep = float(np.mean(~has_overlap)*100)
+    lines.append(f"\n(2) Envelope overlap: mean ±1 SD band overlap was {ov_mean:.1f}% across the "
+                 f"full cycle; the groups were completely separated (0% overlap) for {pct_sep:.1f}% "
+                 f"of the movement. "
+                 f"{'Low overlap indicates that the groups occupy largely distinct acceleration amplitude ranges, supporting their kinematic distinctiveness.' if ov_mean<50 else 'Moderate-to-high overlap suggests that while mean curves differ, individual variability produces substantial group overlap in the acceleration amplitude space.'}")
+    # Cross-correlation
+    lines.append(f"\n(3) Cross-correlation: at lag = 0 (perfect temporal alignment), r = {zc:.4f}. "
+                 f"{'This indicates high shape similarity between group mean curves, with differences primarily in amplitude rather than timing.' if abs(zc)>0.8 else 'This indicates moderate shape similarity, with both amplitude and temporal differences contributing to between-group divergence.'}"
+                 f"{f' The peak correlation occurred at lag = {pl} samples, suggesting a temporal offset between groups.' if pl!=0 else ' No temporal offset was detected (peak at lag = 0).'}")
+    # Peaks
+    if len(peaks_f)>0 or len(peaks_c)>0:
+        lines.append(f"\n(4) Peak analysis: {len(peaks_f)} peak(s) detected in FALL and "
+                     f"{len(peaks_c)} peak(s) in CTRL mean curves. "
+                     f"Differences in peak number, amplitude, and timing may reflect distinct "
+                     f"momentum generation strategies between groups during sit-to-stand.")
+    return "\n".join(lines)
+
+# ── APA: Stats in upload (Estatísticas tab) ───────────────────────────────────
+def apa_m_boxplot(n1, n2, g1_s, g2_s):
+    return (f"Individual data distributions for each kinematic metric were visualized using "
+            f"box-and-whisker plots with overlaid individual data points. Box bounds represent "
+            f"the interquartile range (IQR; Q1–Q3), the horizontal line denotes the median, "
+            f"the cross (×) indicates the mean, and whiskers extend to 1.5×IQR. "
+            f"Descriptive statistics (n, mean, median, SD, min, max) are reported for "
+            f"{g1_s} (n = {n1}) and {g2_s} (n = {n2}). "
+            f"Statistical comparison used the Mann-Whitney U test (Mann & Whitney, 1947) "
+            f"with effect size quantified by Cohen's d (Cohen, 1988).")
+
 # ── Render advanced analyses tab ──────────────────────────────────────────────
 def render_advanced_tab(df_sub, g1_name, g2_name, ks):
     mc, g1_df, g2_df = prep_data(df_sub, g1_name, g2_name)
@@ -1123,6 +1270,9 @@ with tab1:
             "Δ":f"{da:+.4f}","Δ%":f"{dr:+.1f}%","RMSE":f"{float(np.sqrt(np.mean((cp-fp)**2))):.4f}",
             "r":f"{float(np.corrcoef(fp,cp)[0,1]):.4f}"}))
     st.dataframe(pd.DataFrame(rows),use_container_width=True,hide_index=True)
+    txt_boxes(apa_m_curves(N_FALL,N_CTRL),
+              apa_r_curves(r_val,rmse_v,area_v,max_d,max_d_f,rows,P2,P3),
+              "emb_curves")
 
 with tab3:
     st.markdown("""<div class="info-box"><strong>SPM-like z-test</strong>:
@@ -1162,6 +1312,9 @@ with tab3:
             "Direção":"CTRL>FALL" if mz>0 else "FALL>CTRL",
             "Fase":"P1" if fase[s]<P2 else "P2" if fase[s]<P3 else "P3"}
             for i,(s,e,mz) in enumerate(regs)]),use_container_width=True,hide_index=True)
+    txt_boxes(apa_m_spm(N_FALL,N_CTRL),
+              apa_r_spm(regs,fase,z_arr,P2,P3),
+              "emb_spm")
 
 with tab5:
     st.markdown("### CV% ao longo da fase")
@@ -1223,6 +1376,10 @@ with tab5:
         ca.metric("r lag=0",f"{zc:.4f}"); cb.metric("r máx",f"{pc:.4f}"); cc.metric("Lag pico",f"{pl}")
     with _c2:
         st.markdown("**Detecção de Picos**"); st.plotly_chart(fig_pk,use_container_width=False)
+    has_ov = ov_abs > 0
+    txt_boxes(apa_m_shape(),
+              apa_r_shape(cv_f,cv_c,ov_pct,zc,pl,pf,pc_,fase,P2,P3,has_ov),
+              "emb_shape")
 
 with tab_adv:
     _mc_emb = [c for c in fall_ind.columns[1:]
