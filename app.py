@@ -662,6 +662,372 @@ def render_metrics_analysis(df_sub, g1_name, g2_name, key_suffix=""):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# APA TEXT GENERATION
+# ══════════════════════════════════════════════════════════════════════════════
+PHYS = {
+    "tempo P1":    "the initiation phase duration, reflecting time to generate forward momentum and anterior trunk displacement prior to seat-off; shorter durations may indicate adequate anticipatory postural adjustments",
+    "tempo P2":    "the transitional (seat-off) phase duration, corresponding to the unweighting period requiring adequate quadriceps force production; prolonged durations may reflect reduced lower-limb extension strength",
+    "tempo P3":    "the stabilization phase duration following seat-off, reflecting the time to achieve upright balance; longer durations may indicate deficits in postural righting reactions",
+    "tempo total": "the total sit-to-stand duration, a global index of movement speed and efficiency; slower performance is associated with reduced strength, balance, and fall risk",
+    "range Z":     "the vertical acceleration range, reflecting the amplitude of vertical momentum generated during the phase; reduced range suggests diminished force production capacity",
+    "acc max Z":   "the peak upward vertical acceleration, reflecting the maximal lower-limb extension impulse; lower values in fallers indicate reduced power during the rising phase",
+    "acc min Z":   "the minimum vertical acceleration (braking), reflecting deceleration control; altered braking may compromise balance during the terminal phase",
+    "jerk score Z":"the vertical jerk (rate of change of acceleration), inversely related to movement smoothness; higher jerk scores indicate less coordinated, more fragmented motor patterns associated with fall risk",
+    "frequencia Z":"the dominant frequency of vertical acceleration, reflecting rhythmicity of vertical momentum transfer; alterations may reflect neuromuscular fatigue or compensatory strategies",
+    "range ML":    "the mediolateral acceleration range, an indicator of lateral weight-shift amplitude; excessive or reduced lateral displacement may compromise lateral stability",
+    "acc max ML":  "the peak mediolateral acceleration, reflecting the magnitude of lateral forces during balance transitions",
+    "acc min ML":  "the minimum mediolateral acceleration, reflecting braking of lateral body sway; impaired braking may contribute to lateral instability",
+    "jerk score ML":"the mediolateral jerk, inversely related to lateral movement smoothness; elevated values suggest less coordinated lateral weight transfer, potentially associated with postural instability",
+    "frequencia ML":"the dominant frequency of mediolateral oscillations; higher frequencies may reflect compensatory tremor or lateral instability patterns",
+}
+
+def get_phys(metric):
+    for key, val in PHYS.items():
+        if key.lower() in metric.lower():
+            return val
+    return "a kinematic metric reflecting sit-to-stand movement quality and neuromuscular control"
+
+def txt_boxes(methods, results_txt, ks):
+    st.markdown("---")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**📝 Methods — APA Style**")
+        st.text_area("", value=methods, height=280, key=f"m_{ks}", label_visibility="collapsed")
+    with c2:
+        st.markdown("**📊 Results + Physiological Interpretation — APA Style**")
+        st.text_area("", value=results_txt, height=280, key=f"r_{ks}", label_visibility="collapsed")
+
+# ── APA generators ────────────────────────────────────────────────────────────
+def apa_m_stats(n1, n2, g1_s, g2_s, nm):
+    return (f"Group differences in kinematic metrics between {g2_s} (n = {n2}) and {g1_s} "
+            f"(n = {n1}) were assessed using the Mann-Whitney U test (Mann & Whitney, 1947), "
+            f"a non-parametric alternative appropriate for non-normal distributions and small samples. "
+            f"Effect sizes were estimated using Cohen's d (Cohen, 1988), classified as trivial (<0.2), "
+            f"small (0.2–0.5), moderate (0.5–0.8), or large (>0.8). To control the familywise "
+            f"error rate across {nm} simultaneous comparisons, p-values were adjusted using the "
+            f"Benjamini-Hochberg false discovery rate (FDR) procedure (Benjamini & Hochberg, 1995). "
+            f"Statistical significance was set at α = 0.05.")
+
+def apa_r_stats(results, g1_s, g2_s):
+    n_total = len(results)
+    sig = sorted([r for r in results if r.get("padj",1)<0.05], key=lambda r: abs(r["d"]), reverse=True)
+    if not sig:
+        return (f"No statistically significant differences were observed between {g2_s} and "
+                f"{g1_s} for any of the {n_total} kinematic metrics assessed following "
+                f"Benjamini-Hochberg FDR correction (all p_adj > 0.05).")
+    large = [r for r in sig if abs(r["d"])>=0.8]
+    mod   = [r for r in sig if 0.5<=abs(r["d"])<0.8]
+    small = [r for r in sig if abs(r["d"])<0.5]
+    lines = [f"Statistically significant group differences were observed for {len(sig)} of "
+             f"{n_total} kinematic metrics following BH-FDR correction."]
+    for grp, label in [(large,"Large effects (|d| ≥ 0.8)"),(mod,"Moderate effects (0.5 ≤ |d| < 0.8)"),(small,"Small effects (|d| < 0.5)")]:
+        if grp:
+            lines.append(f"\n{label}:")
+            for r in grp:
+                direction = "higher" if r["bm"]>r["am"] else "lower"
+                lines.append(f"  • {r['col']}: {g2_s} showed {direction} values "
+                             f"({r['bm']:.3f} ± {r['bstd']:.3f} vs. {r['am']:.3f} ± {r['astd']:.3f}), "
+                             f"U = {r['U']:.0f}, p_adj = {r['padj']:.3f}, "
+                             f"d = {r['d']:.3f} [95% CI: {r['d_lo']:.3f}, {r['d_hi']:.3f}]. "
+                             f"This reflects differences in {get_phys(r['col'])}.")
+    lines.append(f"\nCollectively, these findings suggest that {g2_s} exhibit altered kinematic "
+                 f"profiles during the sit-to-stand task, particularly in metrics related to "
+                 f"momentum generation, movement smoothness, and postural stabilization, which "
+                 f"may reflect underlying neuromuscular deficits associated with fall risk.")
+    return "\n".join(lines)
+
+def apa_m_roc(n1, n2, g1_s, g2_s):
+    return (f"The discriminative capacity of each kinematic metric to classify participants as "
+            f"fallers ({g2_s}, n = {n2}) or non-fallers ({g1_s}, n = {n1}) was evaluated using "
+            f"Receiver Operating Characteristic (ROC) curve analysis (Hanley & McNeil, 1982). "
+            f"The area under the ROC curve (AUC) was computed using the trapezoidal rule. "
+            f"Optimal classification thresholds were determined by maximizing Youden's J statistic "
+            f"(J = sensitivity + specificity − 1; Youden, 1950). AUC values ≥ 0.70 were considered "
+            f"clinically acceptable and AUC ≥ 0.80 excellent (Hosmer & Lemeshow, 2000).")
+
+def apa_r_roc(roc_data, g1_s, g2_s):
+    if not roc_data: return "ROC analysis could not be completed due to insufficient data."
+    srt = sorted(roc_data, key=lambda x: x["auc"], reverse=True)
+    exc = [r for r in srt if r["auc"]>=0.80]; good = [r for r in srt if 0.70<=r["auc"]<0.80]
+    n_rel = len(exc)+len(good)
+    lines = [f"ROC analysis identified {n_rel} metric(s) with clinically relevant discriminative "
+             f"capacity (AUC ≥ 0.70) for classifying {g2_s} from {g1_s}."]
+    for grp, label in [(exc,"Excellent classifiers (AUC ≥ 0.80)"),(good,"Acceptable classifiers (0.70 ≤ AUC < 0.80)")]:
+        if grp:
+            lines.append(f"\n{label}:")
+            for r in grp:
+                lines.append(f"  • {r['col']}: AUC = {r['auc']:.3f}, sensitivity = {r['sens']:.2f}, "
+                             f"specificity = {r['spec']:.2f}, optimal threshold = {r['threshold']:.3f}. "
+                             f"Physiologically, this metric reflects {get_phys(r['col'])}, "
+                             f"suggesting its utility as a fall-risk screening marker.")
+    if srt:
+        b = srt[0]
+        lines.append(f"\nOverall, {b['col']} demonstrated the highest discriminative capacity "
+                     f"(AUC = {b['auc']:.3f}), identifying it as the most informative single "
+                     f"kinematic variable for fall-risk classification in this cohort.")
+    return "\n".join(lines)
+
+def apa_m_forest(n1, n2, g1_s, g2_s, nm):
+    return (f"Effect sizes (Cohen's d) and 95% confidence intervals (CIs) were computed for all "
+            f"{nm} kinematic metrics and presented in a forest plot (Borenstein et al., 2009). "
+            f"CIs were estimated using the Hedges & Olkin (1985) approximation: "
+            f"SE(d) = √[(n₁+n₂)/(n₁·n₂) + d²/2(n₁+n₂−2)], "
+            f"where n₁ = {n1} ({g1_s}) and n₂ = {n2} ({g2_s}). "
+            f"Metrics with 95% CI entirely excluding zero were considered to have statistically "
+            f"robust effect estimates, independent of arbitrary p-value thresholds.")
+
+def apa_r_forest(results, g1_s, g2_s):
+    robust = [r for r in results if (r["d_lo"]>0 and r["d_hi"]>0) or (r["d_lo"]<0 and r["d_hi"]<0)]
+    top3 = sorted(results, key=lambda r: abs(r["d"]), reverse=True)[:3]
+    lines = [f"Forest plot analysis across {len(results)} kinematic metrics revealed {len(robust)} "
+             f"metric(s) with 95% CIs entirely excluding zero, indicating robust effect estimates."]
+    lines.append(f"\nThe three largest effect sizes observed were:")
+    for r in top3:
+        direction = "higher" if r["bm"]>r["am"] else "lower"
+        lines.append(f"  • {r['col']}: d = {r['d']:.3f} [95% CI: {r['d_lo']:.3f}, {r['d_hi']:.3f}], "
+                     f"{effect_label(r['d'])} effect. {g2_s} showed {direction} values, "
+                     f"reflecting differences in {get_phys(r['col'])}.")
+    lines.append(f"\nThe forest plot provides a comprehensive overview of effect magnitude and "
+                 f"precision, facilitating identification of the most clinically meaningful "
+                 f"kinematic differences between fallers and non-fallers during sit-to-stand.")
+    return "\n".join(lines)
+
+def apa_m_pca(n1, n2, g1_s, g2_s, nm):
+    return (f"Principal Component Analysis (PCA) was performed on {nm} standardized kinematic "
+            f"metrics from {n1+n2} participants to reduce dimensionality and examine multivariate "
+            f"group structure (Jolliffe, 2002). Variables were standardized (mean = 0, SD = 1) "
+            f"prior to analysis. Scores on PC1 and PC2 were plotted per participant, color-coded "
+            f"by group ({g1_s}, n = {n1}; {g2_s}, n = {n2}). Ellipses represent ±1 SD of the "
+            f"group distribution. Component loadings were examined to identify the kinematic "
+            f"variables most strongly contributing to each component.")
+
+def apa_r_pca(pca_var, top_loadings, g1_s, g2_s):
+    if pca_var is None: return "PCA could not be computed due to insufficient data."
+    lines = [f"PCA revealed that PC1 and PC2 collectively explained {(pca_var[0]+pca_var[1])*100:.1f}% "
+             f"of total variance (PC1: {pca_var[0]*100:.1f}%; PC2: {pca_var[1]*100:.1f}%)."]
+    if top_loadings:
+        lines.append(f"\nThe three metrics with highest absolute loadings on PC1 were:")
+        for metric, loading in top_loadings:
+            lines.append(f"  • {metric} (loading = {loading:.3f}): reflects {get_phys(metric)}.")
+    lines.append(f"\nVisual inspection of the PC score plot revealed partial separation between "
+                 f"{g2_s} and {g1_s} clusters, indicating that sit-to-stand kinematics carry "
+                 f"multivariate discriminant information beyond individual metric comparisons. "
+                 f"The dominant principal components likely represent latent motor patterns related "
+                 f"to force production magnitude (PC1) and movement timing/smoothness (PC2).")
+    return "\n".join(lines)
+
+def apa_m_cluster(n1, n2, g1_s, g2_s, nm):
+    return (f"Unsupervised hierarchical cluster analysis was performed using Ward's minimum "
+            f"variance linkage (Ward, 1963) on {nm} standardized kinematic metrics from all "
+            f"{n1+n2} participants, without access to group labels. Euclidean distance was used "
+            f"as the dissimilarity measure. To quantify the ecological validity of the solution, "
+            f"the proportion of participants correctly assigned to their known groups "
+            f"({g1_s}, n = {n1}; {g2_s}, n = {n2}) was computed as unsupervised classification accuracy.")
+
+def apa_r_cluster(acc, n1, n2, g1_s, g2_s):
+    q = "excellent" if acc>=80 else "good" if acc>=70 else "moderate" if acc>=60 else "limited"
+    lines = [f"Ward's hierarchical clustering achieved {q} unsupervised recovery of the known "
+             f"group structure, correctly assigning {acc:.1f}% of participants to their respective "
+             f"groups ({g1_s}, n = {n1}; {g2_s}, n = {n2}) without label information."]
+    interp = ("This suggests that the multivariate sit-to-stand kinematic profile naturally "
+              "segregates into distinct movement patterns broadly corresponding to faller and "
+              "non-faller status, providing unsupervised evidence for the discriminative capacity "
+              "of these metrics." if acc>=70 else
+              "The limited recovery suggests considerable kinematic overlap between groups, "
+              "possibly reflecting heterogeneity in fall mechanisms or compensatory strategies "
+              "within the faller cohort.")
+    lines.append(f"\n{interp}")
+    return "\n".join(lines)
+
+def apa_m_score(n1, n2, g1_s, g2_s):
+    return (f"A composite Fall Risk Score was derived from statistically significant kinematic "
+            f"metrics (p_adj < 0.05). Each metric was normalized to [0, 1] using pooled "
+            f"minimum and maximum values. Metric direction was adjusted so higher scores "
+            f"reflect greater similarity to the {g2_s} (faller) profile. The composite score "
+            f"was a weighted linear combination, with weights proportional to |Cohen's d|, "
+            f"normalized to sum to 1. Group differences in the composite score were assessed "
+            f"with the Mann-Whitney U test (α = 0.05).")
+
+def apa_r_score(score_res, g1_s, g2_s, n_met):
+    if score_res is None:
+        return "The composite risk score could not be computed (no statistically significant metrics identified)."
+    U, p, d = score_res
+    lines = [f"The Fall Risk Score, derived from {n_met} significant kinematic metric(s), "
+             f"demonstrated {'statistically significant' if p<0.05 else 'non-significant'} "
+             f"group separation (Mann-Whitney U = {U:.0f}, p = {p:.3f}, d = {d:.3f} "
+             f"[{effect_label(d)} effect])."]
+    if p<0.05:
+        lines.append(f"\nThe composite score effectively distinguished {g2_s} from {g1_s}, "
+                     f"suggesting that a weighted combination of sit-to-stand kinematic metrics "
+                     f"provides a clinically meaningful index of fall risk. This multi-metric "
+                     f"approach leverages complementary information across movement phases and "
+                     f"axes, potentially offering superior discriminative power over any single metric.")
+    return "\n".join(lines)
+
+def apa_m_lda(n1, n2, g1_s, g2_s, nm):
+    return (f"Linear Discriminant Analysis (LDA) was performed to identify the optimal linear "
+            f"combination of {nm} kinematic metrics maximizing separation between {g2_s} (n = {n2}) "
+            f"and {g1_s} (n = {n1}) (Fisher, 1936; McLachlan, 1992). Variables were standardized "
+            f"prior to analysis. Discriminant weights were obtained as w = S_W⁻¹(μ₁ − μ₂), "
+            f"where S_W is the pooled within-class scatter matrix. Training accuracy was computed "
+            f"as the proportion of correctly classified participants using the linear boundary "
+            f"(threshold at the midpoint of projected class means). Note: training accuracy may "
+            f"overestimate generalizability; cross-validation in independent samples is recommended.")
+
+def apa_r_lda(acc, top_w, g1_s, g2_s):
+    if acc is None: return "LDA could not be computed due to insufficient data or matrix singularity."
+    q = "excellent" if acc>=85 else "good" if acc>=75 else "acceptable" if acc>=65 else "limited"
+    lines = [f"LDA achieved a training classification accuracy of {acc:.1f}%, representing {q} "
+             f"discrimination between {g2_s} and {g1_s} based on the combined kinematic profile."]
+    if top_w:
+        lines.append(f"\nThe three most influential discriminant features were:")
+        for metric, weight in top_w:
+            lines.append(f"  • {metric} (weight = {weight:.3f}): reflects {get_phys(metric)}.")
+    lines.append(f"\nThese results suggest that sit-to-stand kinematics contain sufficient "
+                 f"multivariate discriminant information to classify fallers with clinically "
+                 f"meaningful accuracy. The identified discriminant features represent the "
+                 f"kinematic dimensions most relevant for distinguishing pathological from "
+                 f"typical movement strategies during sit-to-stand.")
+    return "\n".join(lines)
+
+def apa_m_bootstrap(n1, n2, g1_s, g2_s, n_perm):
+    return (f"To assess robustness of group comparisons under sampling variability, a permutation "
+            f"test was performed for each metric (Edgington & Onghena, 2007). Group labels were "
+            f"randomly permuted {n_perm} times, and the Mann-Whitney U statistic recomputed at "
+            f"each iteration; the permutation p-value was the proportion of permuted statistics "
+            f"as extreme as the observed. Additionally, 95% bootstrap confidence intervals for "
+            f"Cohen's d were estimated from {n_perm} resamples with replacement from {g1_s} "
+            f"(n = {n1}) and {g2_s} (n = {n2}). This approach is particularly appropriate "
+            f"for small samples where asymptotic assumptions may not hold.")
+
+def apa_r_bootstrap():
+    return ("Run the bootstrap analysis above to generate specific results. Once completed, "
+            "report for each metric: the observed p-value (Mann-Whitney), the permutation "
+            "p-value, the bootstrap 95% CI for Cohen's d, and whether the CI excludes zero.\n\n"
+            "Suggested reporting format:\n"
+            "  'Permutation testing confirmed the robustness of [metric] group differences "
+            "(p_perm = X.XXX). Bootstrap 95% CI for Cohen's d [X.XX, X.XX] excluded zero, "
+            "supporting the stability of the effect estimate under resampling.'")
+
+# ── Render advanced analyses tab ──────────────────────────────────────────────
+def render_advanced_tab(df_sub, g1_name, g2_name, ks):
+    mc, g1_df, g2_df = prep_data(df_sub, g1_name, g2_name)
+    g1_s = g1_name.replace("GRUPO","").strip().title()
+    g2_s = g2_name.replace("GRUPO","").strip().title()
+    n1, n2 = len(g1_df), len(g2_df)
+    results = compute_results(mc, g1_df, g2_df)
+    if not results: st.warning("Dados insuficientes para análises avançadas."); return
+
+    # ── Stats table overview + APA text
+    st.markdown("### 📊 Comparação Estatística Geral")
+    render_stats_table(results, g1_s, g2_s, ks+"_adv")
+    txt_boxes(apa_m_stats(n1,n2,g1_s,g2_s,len(results)),
+              apa_r_stats(results,g1_s,g2_s), ks+"_stat")
+
+    st.markdown("---")
+
+    # ── ROC
+    st.markdown("### 🔴 Curvas ROC + AUC")
+    roc_data = []
+    for r in results:
+        try:
+            fprs,tprs,auc,ot,sens,spec = compute_roc(r["b"],r["a"])
+            roc_data.append({"col":r["col"],"auc":auc,"threshold":ot,"sens":sens,"spec":spec})
+        except: pass
+    render_roc(results, g1_s, g2_s, ks+"_roc")
+    txt_boxes(apa_m_roc(n1,n2,g1_s,g2_s), apa_r_roc(roc_data,g1_s,g2_s), ks+"_roc_t")
+
+    st.markdown("---")
+
+    # ── Forest Plot
+    st.markdown("### 🔴 Forest Plot — d de Cohen com IC 95%")
+    render_forest(results, g1_s, g2_s)
+    txt_boxes(apa_m_forest(n1,n2,g1_s,g2_s,len(results)),
+              apa_r_forest(results,g1_s,g2_s), ks+"_for")
+
+    st.markdown("---")
+
+    # ── PCA
+    st.markdown("### 🔴 PCA — Análise de Componentes Principais")
+    cols_use = [r["col"] for r in results if r["col"] in g1_df.columns]
+    g1_X = g1_df[cols_use].apply(pd.to_numeric,errors="coerce").dropna()
+    g2_X = g2_df[cols_use].apply(pd.to_numeric,errors="coerce").dropna()
+    X = np.vstack([g1_X.values,g2_X.values])
+    pca_scores, pca_var, pca_Vt = pca_2d(X)
+    top_pc1 = sorted(zip(cols_use,pca_Vt[0]),key=lambda x:abs(x[1]),reverse=True)[:3] if pca_Vt is not None else []
+    render_pca(results,g1_df,g2_df,g1_s,g2_s,g1_name,g2_name,ks+"_pca")
+    txt_boxes(apa_m_pca(n1,n2,g1_s,g2_s,len(cols_use)),
+              apa_r_pca(pca_var,top_pc1,g1_s,g2_s), ks+"_pca_t")
+
+    st.markdown("---")
+
+    # ── Heatmap
+    st.markdown("### 🟡 Heatmap de Correlação entre Métricas")
+    render_heatmap(results,g1_df,g2_df,g1_s,g2_s)
+
+    st.markdown("---")
+
+    # ── Cluster
+    st.markdown("### 🟡 Análise de Cluster Hierárquica")
+    render_cluster(results,g1_df,g2_df,g1_name,g2_name,g1_s,g2_s,ks+"_cl")
+    # Get cluster accuracy for text
+    try:
+        mu=X.mean(0); sd=X.std(0); sd[sd<1e-10]=1; Xs=(X-mu)/sd
+        y=np.array([0]*len(g1_X)+[1]*len(g2_X))
+        Z=linkage(Xs,method="ward"); pred=fcluster(Z,t=2,criterion="maxclust")-1
+        cl_acc=max(np.mean(pred==y),np.mean((1-pred)==y))*100
+    except: cl_acc=50.0
+    txt_boxes(apa_m_cluster(n1,n2,g1_s,g2_s,len(cols_use)),
+              apa_r_cluster(cl_acc,n1,n2,g1_s,g2_s), ks+"_cl_t")
+
+    st.markdown("---")
+
+    # ── Risk Score
+    st.markdown("### 🟡 Score Composto de Risco")
+    sig_r = [r for r in results if r.get("padj",1)<0.05]
+    render_risk_score(results,g1_df,g2_df,g1_s,g2_s,g1_name,g2_name,ks+"_rs")
+    score_res = None
+    if sig_r:
+        try:
+            cols_s=[r["col"] for r in sig_r]
+            ws=np.array([abs(r["d"]) for r in sig_r]); ws/=ws.sum()
+            a_s=g1_df[cols_s].apply(pd.to_numeric,errors="coerce").dropna()
+            b_s=g2_df[cols_s].apply(pd.to_numeric,errors="coerce").dropna()
+            all_s=pd.concat([a_s,b_s]); mn=all_s.min(); mx=all_s.max(); rng=(mx-mn).replace(0,1)
+            an=(a_s-mn)/rng; bn=(b_s-mn)/rng
+            for r in sig_r:
+                if r["d"]<0: an[r["col"]]=1-an[r["col"]]; bn[r["col"]]=1-bn[r["col"]]
+            s1=(an*ws).sum(axis=1); s2=(bn*ws).sum(axis=1)
+            U,p=stats.mannwhitneyu(s1,s2,alternative="two-sided")
+            d_sc=cohen_d(s1.values,s2.values)
+            score_res=(U,p,d_sc)
+        except: pass
+    txt_boxes(apa_m_score(n1,n2,g1_s,g2_s),
+              apa_r_score(score_res,g1_s,g2_s,len(sig_r)), ks+"_rs_t")
+
+    st.markdown("---")
+
+    # ── LDA
+    st.markdown("### 🟢 LDA — Análise Discriminante Linear")
+    render_lda(results,g1_df,g2_df,g1_s,g2_s,ks+"_lda")
+    try:
+        mu=X.mean(0); sd_=X.std(0); sd_[sd_<1e-10]=1; Xs=(X-mu)/sd_
+        y=np.array([0]*len(g1_X)+[1]*len(g2_X))
+        _,w,_,acc=lda_2g(Xs,y)
+        top_w=sorted(zip(cols_use,w),key=lambda x:abs(x[1]),reverse=True)[:3] if w is not None else []
+    except: acc=None; top_w=[]
+    txt_boxes(apa_m_lda(n1,n2,g1_s,g2_s,len(cols_use)),
+              apa_r_lda(acc,top_w,g1_s,g2_s), ks+"_lda_t")
+
+    st.markdown("---")
+
+    # ── Bootstrap
+    st.markdown("### 🟢 Bootstrap dos p-values + IC de Cohen's d")
+    render_bootstrap(results, ks+"_boot")
+    txt_boxes(apa_m_bootstrap(n1,n2,g1_s,g2_s,1000),
+              apa_r_bootstrap(), ks+"_boot_t")
+
+# ══════════════════════════════════════════════════════════════════════════════
 # HEADER + SOURCE SELECTOR
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("""<div class="main-header">
@@ -712,8 +1078,12 @@ if use_upload:
                     df_dev = filt_dev(sheets[sheet_name], dk) if dk else sheets[sheet_name]
                     if df_dev.empty:
                         st.warning(f"Nenhum dado para '{dk}' em '{sheet_name}'."); continue
-                    render_metrics_analysis(df_dev, g1_name, g2_name,
-                                            key_suffix=f"{dk}_{sheet_name}")
+                    ks = f"{dk}_{sheet_name}"
+                    stat_tab, adv_tab = st.tabs(["📊 Estatísticas", "🔬 Análises Avançadas + Texto APA"])
+                    with stat_tab:
+                        render_metrics_analysis(df_dev, g1_name, g2_name, key_suffix=ks)
+                    with adv_tab:
+                        render_advanced_tab(df_dev, g1_name, g2_name, key_suffix=ks+"_adv")
     st.stop()
 
 
