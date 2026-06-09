@@ -645,6 +645,15 @@ def render_bootstrap(results, ks):
         st.info("Clique em '▶ Rodar' para iniciar o cálculo (pode demorar alguns segundos).")
 
 # ── MAIN render function ──────────────────────────────────────────────────────
+def _apply_excl(df):
+    """Remove sujeitos excluídos (session_state) de qualquer DataFrame."""
+    exc = st.session_state.get("_excluded_subjects", [])
+    if not exc:
+        return df
+    sc = next((c for c in df.columns
+               if str(c).strip().upper().startswith("SUJEITO")), df.columns[0])
+    return df[~df[sc].astype(str).isin(exc)].reset_index(drop=True)
+
 def _exclusion_banner():
     exc = st.session_state.get("_excluded_subjects", [])
     if exc:
@@ -1925,7 +1934,8 @@ def render_comparison_mode():
 
     # ── Embedded data ─────────────────────────────────────────────────────────
     _, _, _, _, fall_ind, ctrl_ind = load_embedded()
-    df_emb = pd.concat([ctrl_ind.assign(Grupo="CONTROLE"), fall_ind.assign(Grupo="FALL")], ignore_index=True)
+    df_emb = pd.concat([_apply_excl(ctrl_ind).assign(Grupo="CONTROLE"),
+                        _apply_excl(fall_ind).assign(Grupo="FALL")], ignore_index=True)
     mc_emb = get_metric_cols(df_emb)
     res_emb = compute_results(mc_emb,
                               df_emb[df_emb["Grupo"]=="CONTROLE"],
@@ -2260,8 +2270,9 @@ with tab_box:
     </div>""", unsafe_allow_html=True)
 
     # Build combined df with Grupo column
-    df_emb_b = pd.concat([ctrl_ind.assign(Grupo="CONTROLE"),
-                           fall_ind.assign(Grupo="FALL")], ignore_index=True)
+    _exclusion_banner()
+    df_emb_b = pd.concat([_apply_excl(ctrl_ind).assign(Grupo="CONTROLE"),
+                           _apply_excl(fall_ind).assign(Grupo="FALL")], ignore_index=True)
     mc_emb_b = [c for c in fall_ind.columns[1:]
                 if pd.to_numeric(fall_ind[c], errors='coerce').notna().sum() > 3]
     mc_emb_b = [c for c in mc_emb_b if c not in META_COLS]
@@ -2335,7 +2346,8 @@ with tab_adv:
     _mc_emb = [c for c in fall_ind.columns[1:]
                if pd.to_numeric(fall_ind[c], errors='coerce').notna().sum() > 3]
     render_advanced_tab(
-        pd.concat([ctrl_ind.assign(Grupo="CONTROLE"), fall_ind.assign(Grupo="FALL")]),
+        pd.concat([_apply_excl(ctrl_ind).assign(Grupo="CONTROLE"),
+                   _apply_excl(fall_ind).assign(Grupo="FALL")]),
         "CONTROLE", "FALL", ks="emb"
     )
 
