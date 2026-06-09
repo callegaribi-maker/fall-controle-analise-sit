@@ -2344,6 +2344,110 @@ with tab_box:
                 st.markdown("---")
                 st.markdown("#### 📊 Todas as métricas")
                 render_stats_table(res_emb_b, "CONTROLE", "FALL", "emb_b_all")
+
+                # ── Outlier detection ─────────────────────────────────────────
+                st.markdown("---")
+                st.markdown("### 🔴 Sujeitos outliers — Dados Embutidos")
+                st.markdown("""<div class="info-box">
+                Z-score calculado dentro de cada grupo (FALL e CTRL separadamente) para cada métrica.
+                <strong>Score de outlier</strong> = média dos |z-scores| em todas as métricas.
+                Score &gt; 2 = outlier potencial.
+                </div>""", unsafe_allow_html=True)
+
+                subj_col_emb = next((c for c in fall_ind.columns
+                                     if str(c).strip().upper().startswith("SUJEITO")), fall_ind.columns[0])
+
+                # Build full dataframe (unfiltered) for subject list
+                df_emb_full = pd.concat([
+                    ctrl_ind.assign(Grupo="CONTROLE"),
+                    fall_ind.assign(Grupo="FALL")
+                ], ignore_index=True)
+
+                # Compute z-scores within group for each metric
+                z_rows = {}  # subj_name → list of |z|
+                for col_z in mc_emb_b:
+                    for grp_df, grp_name in [(ctrl_ind, "CONTROLE"),(fall_ind, "FALL")]:
+                        vals = pd.to_numeric(grp_df[col_z], errors="coerce")
+                        mu_z = vals.mean(); sd_z = vals.std(ddof=1)
+                        if sd_z > 0:
+                            zv = np.abs((vals - mu_z) / sd_z)
+                        else:
+                            zv = pd.Series(np.zeros(len(vals)))
+                        for subj, z_val in zip(grp_df[subj_col_emb].astype(str), zv.fillna(0)):
+                            z_rows.setdefault(subj, []).append(float(z_val))
+
+                if z_rows:
+                    scores_emb = {s: np.mean(zs) for s, zs in z_rows.items()}
+                    # Get group per subject
+                    grp_map = {str(r[subj_col_emb]): r["Grupo"]
+                               for _, r in df_emb_full.iterrows()}
+                    df_out_emb = pd.DataFrame([{
+                        "Sujeito": s,
+                        "Grupo": grp_map.get(s,"–"),
+                        "Score outlier": round(v, 3),
+                        "Outlier": "⚠️ Sim" if v > 2 else "✅ Ok"
+                    } for s, v in scores_emb.items()
+                    ]).sort_values("Score outlier", ascending=False).reset_index(drop=True)
+
+                    n_out_emb = int((df_out_emb["Outlier"]=="⚠️ Sim").sum())
+                    ca_, cb_, cc_ = st.columns(3)
+                    ca_.metric("Total sujeitos", len(df_out_emb))
+                    cb_.metric("⚠️ Outliers", n_out_emb)
+                    cc_.metric("% outliers", f"{n_out_emb/len(df_out_emb)*100:.0f}%")
+
+                    def co_emb(v): return "background-color:#fee2e2" if v=="⚠️ Sim" else ""
+                    try:    styled_emb = df_out_emb.style.map(co_emb, subset=["Outlier"])
+                    except: styled_emb = df_out_emb.style.applymap(co_emb, subset=["Outlier"])
+                    st.dataframe(styled_emb, use_container_width=True, hide_index=True)
+
+                    # Heatmap |z| por sujeito × métrica
+                    if len(mc_emb_b) > 1:
+                        st.markdown("#### 🗺️ Mapa de desvio por sujeito × métrica (|z-score|)")
+                        subj_order_emb = df_out_emb["Sujeito"].tolist()
+                        mat_emb = np.array([[z_rows[s][i] if i < len(z_rows[s]) else 0
+                                             for i in range(len(mc_emb_b))]
+                                            for s in subj_order_emb])
+                        fig_he = go.Figure(go.Heatmap(
+                            z=mat_emb, x=mc_emb_b, y=subj_order_emb,
+                            colorscale="Reds", zmin=0, zmax=3,
+                            colorbar=dict(title="|z|"),
+                            hovertemplate="Sujeito: <b>%{y}</b><br>Métrica: <b>%{x}</b><br>|z| = %{z:.2f}<extra></extra>"
+                        ))
+                        fig_he.update_layout(
+                            **base_layout(h=max(350, len(subj_order_emb)*22),
+                                          w=max(500, len(mc_emb_b)*50)),
+                            xaxis=dict(tickangle=-40, tickfont=dict(size=9)),
+                            yaxis=dict(tickfont=dict(size=9)),
+                            title="Desvio intragrupo — dados embutidos"
+                        )
+                        st.plotly_chart(fig_he, use_container_width=False)
+
+                    # Exclusion controls
+                    st.markdown("---")
+                    st.markdown("### ✂️ Excluir sujeitos e reanalisar")
+                    currently_excl_emb = st.session_state.get("_excluded_subjects", [])
+                    all_subj_emb = df_out_emb["Sujeito"].tolist()
+                    valid_def_emb = [s for s in currently_excl_emb if s in all_subj_emb]
+                    sel_excl_emb = st.multiselect(
+                        "Sujeitos a excluir (dados embutidos)",
+                        options=all_subj_emb,
+                        default=valid_def_emb,
+                        key="excl_emb_ms"
+                    )
+                    col_ea, col_eb = st.columns(2)
+                    with col_ea:
+                        if st.button("✂️ Aplicar exclusão", key="btn_excl_emb"):
+                            st.session_state["_excluded_subjects"] = sel_excl_emb
+                            st.success(f"{len(sel_excl_emb)} sujeito(s) excluído(s). Todas as abas serão atualizadas.")
+                            st.rerun()
+                    with col_eb:
+                        if st.button("🔄 Limpar exclusão", key="btn_clear_emb"):
+                            st.session_state["_excluded_subjects"] = []
+                            st.success("Exclusão removida.")
+                            st.rerun()
+                    if currently_excl_emb:
+                        st.info(f"Atualmente excluídos: **{', '.join(currently_excl_emb)}**")
+
         else:
             st.warning("Dados insuficientes para gerar boxplot.")
     else:
