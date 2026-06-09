@@ -1956,7 +1956,7 @@ st.markdown(f"""<div style="margin-bottom:16px">
   <span class="badge badge-ctrl">CONTROLE n={N_CTRL}</span>
 </div>""", unsafe_allow_html=True)
 
-tab1,tab3,tab5,tab_adv=st.tabs(["📈 Curvas Resultantes","🔬 Análise Temporal (SPM)","🧬 Análise da Forma das Curvas","🔬 Análises Avançadas + Texto APA"])
+tab1,tab3,tab5,tab_box,tab_adv=st.tabs(["📈 Curvas Resultantes","🔬 Análise Temporal (SPM)","🧬 Análise da Forma das Curvas","📦 Dispersão Individual","🔬 Análises Avançadas + Texto APA"])
 
 with tab1:
     fig=make_subplots(specs=[[{"secondary_y":True}]])
@@ -2104,6 +2104,84 @@ with tab5:
                 apa_r_shape(cv_f,cv_c,ov_pct,zc,pl,pf,pc_,fase,P2,P3,has_ov),
                 apa_i_shape(cv_f,cv_c,ov_pct,zc,pl,pf,pc_),
                 "emb_shape")
+
+with tab_box:
+    st.markdown("#### 📦 Dispersão Individual — Dados Embutidos")
+    st.markdown("""<div class="info-box">Boxplot com todos os pontos individuais.
+    Passe o mouse sobre cada bolinha para ver o nome do sujeito e o valor.
+    </div>""", unsafe_allow_html=True)
+
+    # Build combined df with Grupo column
+    df_emb_b = pd.concat([ctrl_ind.assign(Grupo="CONTROLE"),
+                           fall_ind.assign(Grupo="FALL")], ignore_index=True)
+    mc_emb_b = [c for c in fall_ind.columns[1:]
+                if pd.to_numeric(fall_ind[c], errors='coerce').notna().sum() > 3]
+    mc_emb_b = [c for c in mc_emb_b if c not in META_COLS]
+
+    if mc_emb_b:
+        g1_emb_df = df_emb_b[df_emb_b["Grupo"]=="CONTROLE"]
+        g2_emb_df = df_emb_b[df_emb_b["Grupo"]=="FALL"]
+        res_emb_b = compute_results(mc_emb_b, g1_emb_df, g2_emb_df)
+
+        if res_emb_b:
+            # Subject column detection
+            subj_col_emb = next((c for c in fall_ind.columns
+                                 if c.strip().upper().startswith("SUJEITO")), fall_ind.columns[0])
+
+            met_emb = st.selectbox("Métrica", mc_emb_b, key="emb_box_met")
+            r_emb = next((x for x in res_emb_b if x["col"]==met_emb), None)
+            if r_emb:
+                a_emb, b_emb = r_emb["a"], r_emb["b"]
+                # Subject labels
+                s_ctrl = ctrl_ind[subj_col_emb].astype(str).values if subj_col_emb in ctrl_ind.columns else [f"C{i+1}" for i in range(len(a_emb))]
+                s_fall = fall_ind[subj_col_emb].astype(str).values if subj_col_emb in fall_ind.columns else [f"F{i+1}" for i in range(len(b_emb))]
+
+                fig_emb = go.Figure()
+                for vals, name, color, subj in [
+                    (a_emb,"CONTROLE",C_CTRL,s_ctrl),
+                    (b_emb,"FALL",    C_FALL,s_fall)
+                ]:
+                    fig_emb.add_trace(go.Box(
+                        x=[name]*len(vals), y=vals, name=name,
+                        marker_color=color, boxmean=True, boxpoints="all",
+                        jitter=0.4, pointpos=0, marker=dict(size=8, opacity=0.8),
+                        text=subj[:len(vals)],
+                        hovertemplate="<b>%{text}</b><br>%{y:.4f}<extra></extra>"
+                    ))
+                fig_emb.update_layout(**base_layout(h=SQ, w=SQ),
+                                      yaxis_title=met_emb, showlegend=False,
+                                      title=f"{met_emb} — FALL vs CONTROLE")
+
+                c1_b, c2_b = st.columns([1,1])
+                with c1_b:
+                    st.plotly_chart(fig_emb, use_container_width=False)
+                with c2_b:
+                    st.markdown("**Estatísticas**")
+                    st.dataframe(pd.DataFrame({
+                        "": ["n","Média","Mediana","DP","Min","Max"],
+                        "CONTROLE": [str(len(a_emb)),
+                                     f"{np.mean(a_emb):.4f}", f"{np.median(a_emb):.4f}",
+                                     f"{np.std(a_emb,ddof=1):.4f}",
+                                     f"{a_emb.min():.4f}", f"{a_emb.max():.4f}"],
+                        "FALL":     [str(len(b_emb)),
+                                     f"{np.mean(b_emb):.4f}", f"{np.median(b_emb):.4f}",
+                                     f"{np.std(b_emb,ddof=1):.4f}",
+                                     f"{b_emb.min():.4f}", f"{b_emb.max():.4f}"],
+                    }), hide_index=True, use_container_width=True)
+                    st.markdown(f"""| | |
+|---|---|
+| Mann-Whitney U | {r_emb['U']:.0f} |
+| p-valor | {r_emb['p']:.4f} {sig_stars(r_emb['p'])} |
+| d Cohen | {r_emb['d']:.3f} ({effect_label(r_emb['d'])}) |""")
+
+                # All metrics summary table
+                st.markdown("---")
+                st.markdown("#### 📊 Todas as métricas")
+                render_stats_table(res_emb_b, "CONTROLE", "FALL", "emb_b_all")
+        else:
+            st.warning("Dados insuficientes para gerar boxplot.")
+    else:
+        st.warning("Nenhuma métrica numérica encontrada nos dados embutidos.")
 
 with tab_adv:
     _mc_emb = [c for c in fall_ind.columns[1:]
