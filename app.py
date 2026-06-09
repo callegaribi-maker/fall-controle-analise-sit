@@ -1475,8 +1475,10 @@ def render_validation_tab(sheets, sheet_names, g1_name, g2_name):
 
     sheet_sel = st.selectbox("Aba (eixo)", sheet_names, key="val_sheet")
     df_all = sheets[sheet_sel]
-    df_k = _apply_excl(filt_dev(df_all, "kinem")).reset_index(drop=True)
-    df_m = _apply_excl(filt_dev(df_all, "mobil")).reset_index(drop=True)
+    df_k_all = filt_dev(df_all, "kinem").reset_index(drop=True)   # todos (para multiselect)
+    df_m_all = filt_dev(df_all, "mobil").reset_index(drop=True)
+    df_k = _apply_excl(df_k_all).reset_index(drop=True)           # filtrado para análise
+    df_m = _apply_excl(df_m_all).reset_index(drop=True)
     if df_k.empty or df_m.empty:
         st.warning("Dados de Kinem ou Mobile não encontrados."); return
 
@@ -1702,10 +1704,15 @@ def render_validation_tab(sheets, sheet_names, g1_name, g2_name):
     </div>""", unsafe_allow_html=True)
 
     currently_excluded = st.session_state.get("_excluded_subjects", [])
+    # options = TODOS os sujeitos (dataset original, antes do filtro de exclusão)
+    subj_col_all = next((c for c in df_k_all.columns
+                         if str(c).strip().upper().startswith("SUJEITO")), df_k_all.columns[0])
+    all_subj_opts = df_k_all[subj_col_all].astype(str).tolist()
+    valid_default  = [s for s in currently_excluded if s in all_subj_opts]
     sel_excl = st.multiselect(
         "Sujeitos a excluir",
-        options=list(subj_labels),
-        default=currently_excluded,
+        options=all_subj_opts,
+        default=valid_default,
         key="excl_multisel"
     )
 
