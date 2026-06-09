@@ -1475,8 +1475,8 @@ def render_validation_tab(sheets, sheet_names, g1_name, g2_name):
 
     sheet_sel = st.selectbox("Aba (eixo)", sheet_names, key="val_sheet")
     df_all = sheets[sheet_sel]
-    df_k = filt_dev(df_all, "kinem").reset_index(drop=True)
-    df_m = filt_dev(df_all, "mobil").reset_index(drop=True)
+    df_k = _apply_excl(filt_dev(df_all, "kinem")).reset_index(drop=True)
+    df_m = _apply_excl(filt_dev(df_all, "mobil")).reset_index(drop=True)
     if df_k.empty or df_m.empty:
         st.warning("Dados de Kinem ou Mobile não encontrados."); return
 
