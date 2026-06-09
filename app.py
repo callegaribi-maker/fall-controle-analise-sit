@@ -230,6 +230,11 @@ def filt_dev(df, key):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def prep_data(df_sub, g1_name, g2_name):
+    excluded = st.session_state.get("_excluded_subjects", [])
+    if excluded:
+        sc = next((c for c in ["SUJEITOS ","SUJEITOS","sujeitos"] if c in df_sub.columns), None)
+        if sc:
+            df_sub = df_sub[~df_sub[sc].astype(str).isin(excluded)]
     mc    = get_metric_cols(df_sub)
     g1_df = df_sub[df_sub["Grupo"].str.strip()==g1_name]
     g2_df = df_sub[df_sub["Grupo"].str.strip()==g2_name]
@@ -640,7 +645,14 @@ def render_bootstrap(results, ks):
         st.info("Clique em '▶ Rodar' para iniciar o cálculo (pode demorar alguns segundos).")
 
 # ── MAIN render function ──────────────────────────────────────────────────────
+def _exclusion_banner():
+    exc = st.session_state.get("_excluded_subjects", [])
+    if exc:
+        st.warning(f"⚠️ **{len(exc)} sujeito(s) excluído(s) desta análise:** {', '.join(exc)}  "
+                   f"— [Limpar exclusão](#)  *(use o botão na aba Validação Kinem×Mobile)*")
+
 def render_metrics_analysis(df_sub, g1_name, g2_name, key_suffix=""):
+    _exclusion_banner()
     mc, g1_df, g2_df = prep_data(df_sub, g1_name, g2_name)
     g1_s = g1_name.replace("GRUPO","").strip().title()
     g2_s = g2_name.replace("GRUPO","").strip().title()
@@ -1316,6 +1328,7 @@ def apa_i_shape(cv_f, cv_c, ov_pct, zc, pl, pf, pc_):
 
 # ── Render advanced analyses tab ──────────────────────────────────────────────
 def render_advanced_tab(df_sub, g1_name, g2_name, ks):
+    _exclusion_banner()
     mc, g1_df, g2_df = prep_data(df_sub, g1_name, g2_name)
     g1_s = g1_name.replace("GRUPO","").strip().title()
     g2_s = g2_name.replace("GRUPO","").strip().title()
@@ -1670,6 +1683,37 @@ def render_validation_tab(sheets, sheet_names, g1_name, g2_name):
                               for i, c in enumerate(cols_d) if c == rows[i]["Métrica"] or True][:len(cols_d)],
             }).sort_values("|z-score|", ascending=False).reset_index(drop=True)
             st.dataframe(df_met_out, use_container_width=True, hide_index=True)
+
+    # ── Exclusion controls ────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### ✂️ Excluir sujeitos e reanalisar")
+    st.markdown("""<div class="info-box">
+    Selecione os sujeitos a excluir. Todas as abas (Kinem, Mobile, Comparação) serão
+    reprocessadas automaticamente sem eles ao clicar em <strong>Aplicar</strong>.
+    </div>""", unsafe_allow_html=True)
+
+    currently_excluded = st.session_state.get("_excluded_subjects", [])
+    sel_excl = st.multiselect(
+        "Sujeitos a excluir",
+        options=list(subj_labels),
+        default=currently_excluded,
+        key="excl_multisel"
+    )
+
+    col_a, col_b = st.columns([1,1])
+    with col_a:
+        if st.button("✂️ Aplicar exclusão", key="btn_excl"):
+            st.session_state["_excluded_subjects"] = sel_excl
+            st.success(f"{len(sel_excl)} sujeito(s) excluído(s). Volte às abas Kinem/Mobile para ver os resultados atualizados.")
+            st.rerun()
+    with col_b:
+        if st.button("🔄 Limpar — usar todos os sujeitos", key="btn_clear_excl"):
+            st.session_state["_excluded_subjects"] = []
+            st.success("Exclusão removida. Todas as análises usam o conjunto completo.")
+            st.rerun()
+
+    if currently_excluded:
+        st.info(f"Atualmente excluídos: **{', '.join(currently_excluded)}**")
 
     # APA text
     icc_exc = [r for r in rows if r["ICC"]>0.90]
