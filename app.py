@@ -230,7 +230,7 @@ def filt_dev(df, key):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def prep_data(df_sub, g1_name, g2_name):
-    excluded = st.session_state.get("_excluded_subjects", [])
+    excluded = st.session_state.get("_excl_upload", [])
     if excluded:
         sc = next((c for c in ["SUJEITOS ","SUJEITOS","sujeitos"] if c in df_sub.columns), None)
         if sc:
@@ -645,23 +645,22 @@ def render_bootstrap(results, ks):
         st.info("Clique em '▶ Rodar' para iniciar o cálculo (pode demorar alguns segundos).")
 
 # ── MAIN render function ──────────────────────────────────────────────────────
-def _apply_excl(df):
+def _apply_excl(df, key="_excl_upload"):
     """Remove sujeitos excluídos (session_state) de qualquer DataFrame."""
-    exc = st.session_state.get("_excluded_subjects", [])
+    exc = st.session_state.get(key, [])
     if not exc:
         return df
     sc = next((c for c in df.columns
                if str(c).strip().upper().startswith("SUJEITO")), df.columns[0])
     return df[~df[sc].astype(str).isin(exc)].reset_index(drop=True)
 
-def _exclusion_banner():
-    exc = st.session_state.get("_excluded_subjects", [])
+def _exclusion_banner(key="_excl_upload", label="Upload"):
+    exc = st.session_state.get(key, [])
     if exc:
-        st.warning(f"⚠️ **{len(exc)} sujeito(s) excluído(s) desta análise:** {', '.join(exc)}  "
-                   f"— [Limpar exclusão](#)  *(use o botão na aba Validação Kinem×Mobile)*")
+        st.warning(f"⚠️ **{len(exc)} sujeito(s) excluído(s) [{label}]:** {', '.join(exc)}")
 
 def render_metrics_analysis(df_sub, g1_name, g2_name, key_suffix=""):
-    _exclusion_banner()
+    _exclusion_banner(key="_excl_upload", label="Upload")
     mc, g1_df, g2_df = prep_data(df_sub, g1_name, g2_name)
     g1_s = g1_name.replace("GRUPO","").strip().title()
     g2_s = g2_name.replace("GRUPO","").strip().title()
@@ -1337,7 +1336,7 @@ def apa_i_shape(cv_f, cv_c, ov_pct, zc, pl, pf, pc_):
 
 # ── Render advanced analyses tab ──────────────────────────────────────────────
 def render_advanced_tab(df_sub, g1_name, g2_name, ks):
-    _exclusion_banner()
+    _exclusion_banner(key="_excl_upload", label="Upload")
     mc, g1_df, g2_df = prep_data(df_sub, g1_name, g2_name)
     g1_s = g1_name.replace("GRUPO","").strip().title()
     g2_s = g2_name.replace("GRUPO","").strip().title()
@@ -1703,7 +1702,7 @@ def render_validation_tab(sheets, sheet_names, g1_name, g2_name):
     reprocessadas automaticamente sem eles ao clicar em <strong>Aplicar</strong>.
     </div>""", unsafe_allow_html=True)
 
-    currently_excluded = st.session_state.get("_excluded_subjects", [])
+    currently_excluded = st.session_state.get("_excl_upload", [])
     # options = TODOS os sujeitos (dataset original, antes do filtro de exclusão)
     subj_col_all = next((c for c in df_k_all.columns
                          if str(c).strip().upper().startswith("SUJEITO")), df_k_all.columns[0])
@@ -1719,12 +1718,12 @@ def render_validation_tab(sheets, sheet_names, g1_name, g2_name):
     col_a, col_b = st.columns([1,1])
     with col_a:
         if st.button("✂️ Aplicar exclusão", key="btn_excl"):
-            st.session_state["_excluded_subjects"] = sel_excl
+            st.session_state["_excl_upload"] = sel_excl
             st.success(f"{len(sel_excl)} sujeito(s) excluído(s). Volte às abas Kinem/Mobile para ver os resultados atualizados.")
             st.rerun()
     with col_b:
         if st.button("🔄 Limpar — usar todos os sujeitos", key="btn_clear_excl"):
-            st.session_state["_excluded_subjects"] = []
+            st.session_state["_excl_upload"] = []
             st.success("Exclusão removida. Todas as análises usam o conjunto completo.")
             st.rerun()
 
@@ -1941,8 +1940,8 @@ def render_comparison_mode():
 
     # ── Embedded data ─────────────────────────────────────────────────────────
     _, _, _, _, fall_ind, ctrl_ind = load_embedded()
-    df_emb = pd.concat([_apply_excl(ctrl_ind).assign(Grupo="CONTROLE"),
-                        _apply_excl(fall_ind).assign(Grupo="FALL")], ignore_index=True)
+    df_emb = pd.concat([_apply_excl(ctrl_ind, "_excl_emb").assign(Grupo="CONTROLE"),
+                        _apply_excl(fall_ind, "_excl_emb").assign(Grupo="FALL")], ignore_index=True)
     mc_emb = get_metric_cols(df_emb)
     res_emb = compute_results(mc_emb,
                               df_emb[df_emb["Grupo"]=="CONTROLE"],
@@ -2277,9 +2276,9 @@ with tab_box:
     </div>""", unsafe_allow_html=True)
 
     # Build combined df with Grupo column
-    _exclusion_banner()
-    df_emb_b = pd.concat([_apply_excl(ctrl_ind).assign(Grupo="CONTROLE"),
-                           _apply_excl(fall_ind).assign(Grupo="FALL")], ignore_index=True)
+    _exclusion_banner(key="_excl_emb", label="Embutido")
+    df_emb_b = pd.concat([_apply_excl(ctrl_ind, "_excl_emb").assign(Grupo="CONTROLE"),
+                           _apply_excl(fall_ind, "_excl_emb").assign(Grupo="FALL")], ignore_index=True)
     mc_emb_b = [c for c in fall_ind.columns[1:]
                 if pd.to_numeric(fall_ind[c], errors='coerce').notna().sum() > 3]
     mc_emb_b = [c for c in mc_emb_b if c not in META_COLS]
@@ -2425,7 +2424,7 @@ with tab_box:
                     # Exclusion controls
                     st.markdown("---")
                     st.markdown("### ✂️ Excluir sujeitos e reanalisar")
-                    currently_excl_emb = st.session_state.get("_excluded_subjects", [])
+                    currently_excl_emb = st.session_state.get("_excl_emb", [])
                     all_subj_emb = df_out_emb["Sujeito"].tolist()
                     valid_def_emb = [s for s in currently_excl_emb if s in all_subj_emb]
                     sel_excl_emb = st.multiselect(
@@ -2437,12 +2436,12 @@ with tab_box:
                     col_ea, col_eb = st.columns(2)
                     with col_ea:
                         if st.button("✂️ Aplicar exclusão", key="btn_excl_emb"):
-                            st.session_state["_excluded_subjects"] = sel_excl_emb
+                            st.session_state["_excl_emb"] = sel_excl_emb
                             st.success(f"{len(sel_excl_emb)} sujeito(s) excluído(s). Todas as abas serão atualizadas.")
                             st.rerun()
                     with col_eb:
                         if st.button("🔄 Limpar exclusão", key="btn_clear_emb"):
-                            st.session_state["_excluded_subjects"] = []
+                            st.session_state["_excl_emb"] = []
                             st.success("Exclusão removida.")
                             st.rerun()
                     if currently_excl_emb:
@@ -2457,8 +2456,8 @@ with tab_adv:
     _mc_emb = [c for c in fall_ind.columns[1:]
                if pd.to_numeric(fall_ind[c], errors='coerce').notna().sum() > 3]
     render_advanced_tab(
-        pd.concat([_apply_excl(ctrl_ind).assign(Grupo="CONTROLE"),
-                   _apply_excl(fall_ind).assign(Grupo="FALL")]),
+        pd.concat([_apply_excl(ctrl_ind, "_excl_emb").assign(Grupo="CONTROLE"),
+                   _apply_excl(fall_ind, "_excl_emb").assign(Grupo="FALL")]),
         "CONTROLE", "FALL", ks="emb"
     )
 
