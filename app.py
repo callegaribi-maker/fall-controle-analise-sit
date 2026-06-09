@@ -273,14 +273,14 @@ def render_stats_table(results, g1_s, g2_s, ks):
           <td class="ctrl-col">{r['am']:.3f}<small style="color:#999"> ±{r['astd']:.3f}</small></td>
           <td class="fall-col">{r['bm']:.3f}<small style="color:#999"> ±{r['bstd']:.3f}</small></td>
           <td style="color:{'#00695c' if r['d_pct']>=0 else '#c62828'}">{ds}{r['d_pct']:.1f}%</td>
-          <td>{r['U']:.0f}</td><td>{r['p']:.4f}</td>
-          <td style="font-weight:600;color:{'#c62828' if r['padj']<0.05 else '#757575'}">{sig_stars(r['padj'])} {r['padj']:.4f}</td>
+          <td>{r['U']:.0f}</td>
+          <td style="font-weight:600;color:{'#c62828' if r['p']<0.05 else '#757575'}">{sig_stars(r['p'])} {r['p']:.4f}</td>
           <td style="color:{dc};font-weight:600">{r['d']:.3f}</td>
           <td><span style="background:{ec}22;color:{ec};padding:2px 7px;border-radius:12px;font-size:0.78rem;font-weight:600">{eff}</span></td>
         </tr>"""
     st.markdown(f"""<div style="overflow-x:auto"><table class="stat-table">
       <thead><tr><th>Métrica</th><th>{g1_s} (média±DP)</th><th>{g2_s} (média±DP)</th>
-      <th>Δ%</th><th>U</th><th>p bruto</th><th>p adj (BH)</th><th>d Cohen</th><th>Efeito</th>
+      <th>Δ%</th><th>U</th><th>p</th><th>d Cohen</th><th>Efeito</th>
       </tr></thead><tbody>{rows}</tbody></table></div>
       <p style="font-size:0.78rem;color:#9e9e9e;margin-top:6px">*** p&lt;0.001 ** p&lt;0.01 * p&lt;0.05</p>
     """, unsafe_allow_html=True)
@@ -1733,6 +1733,171 @@ def render_sig_comparison_tab(sheets, sheet_names, g1_name, g2_name):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# MODO: COMPARAÇÃO MOBILE EMBUTIDO × MOBILE UPLOAD
+# ══════════════════════════════════════════════════════════════════════════════
+def render_comparison_mode():
+    st.markdown("## 📊 Comparação: Mobile Embutido × Mobile Upload")
+    st.markdown("""<div class="info-box">
+    Compara a significância (p&lt;0,05, Mann-Whitney) das métricas Mobile entre os <strong>dados embutidos</strong>
+    (fixos no app) e o arquivo carregado. Mostra o que ficou diferente: variáveis que ganharam ou
+    perderam significância entre as duas fontes de dados.
+    </div>""", unsafe_allow_html=True)
+
+    # ── Embedded mobile data ──────────────────────────────────────────────────
+    _, _, _, _, fall_ind, ctrl_ind = load_embedded()
+    df_emb = pd.concat([ctrl_ind.assign(Grupo="CONTROLE"), fall_ind.assign(Grupo="FALL")], ignore_index=True)
+    mc_emb = get_metric_cols(df_emb)
+    res_emb = compute_results(mc_emb,
+                              df_emb[df_emb["Grupo"]=="CONTROLE"],
+                              df_emb[df_emb["Grupo"]=="FALL"])
+    emb_map = {r["col"]: r for r in res_emb}
+
+    # ── Upload ────────────────────────────────────────────────────────────────
+    uploaded = st.file_uploader("Arquivo .xlsx com dados Mobile", type="xlsx", key="cmp_mode_upload")
+    if not uploaded:
+        st.info("Faça upload do arquivo para comparar."); return
+
+    sheets = load_upload(uploaded.getvalue())
+    sheet_names = list(sheets.keys())
+    first_df = sheets[sheet_names[0]]
+    if "Grupo" not in first_df.columns or "Device" not in first_df.columns:
+        st.error("Colunas 'Grupo' e/ou 'Device' não encontradas."); return
+
+    g1_name, g2_name = detect_groups(first_df)
+    sheet_sel = st.selectbox("Aba (eixo)", sheet_names, key="cmp_mode_sheet")
+    df_mob = filt_dev(sheets[sheet_sel], "mobil")
+    if df_mob.empty:
+        df_mob = sheets[sheet_sel]  # fallback: use full sheet if no mobile filter
+
+    mc_mob = get_metric_cols(df_mob)
+    res_mob = compute_results(mc_mob,
+                              df_mob[df_mob["Grupo"].str.strip()==g1_name],
+                              df_mob[df_mob["Grupo"].str.strip()==g2_name])
+    mob_map = {r["col"]: r for r in res_mob}
+
+    # ── Match metrics (case-insensitive) ──────────────────────────────────────
+    def norm(s): return "".join(c.lower() for c in str(s) if c.isalnum())
+    emb_norm = {norm(c): c for c in emb_map}
+    mob_norm = {norm(c): c for c in mob_map}
+    common = set(emb_norm) & set(mob_norm)
+
+    if not common:
+        st.warning("Nenhuma métrica em comum encontrada entre os dois datasets. "
+                   "Verifique se os nomes das colunas são compatíveis."); return
+
+    # ── Build comparison table ────────────────────────────────────────────────
+    cmp_rows = []
+    for nk in sorted(common):
+        ce = emb_norm[nk]; cm_ = mob_norm[nk]
+        re_ = emb_map[ce];  rm_ = mob_map[cm_]
+        sig_e = re_["p"] < 0.05
+        sig_m = rm_["p"] < 0.05
+        if   sig_e and sig_m:       status = "✅ Ambos significativos"
+        elif sig_e and not sig_m:   status = "📁 Só Embutido"
+        elif not sig_e and sig_m:   status = "📤 Só Upload"
+        else:                       status = "❌ Nenhum"
+        cmp_rows.append({
+            "Métrica": ce,
+            "Status": status,
+            "p_Embutido": round(re_["p"],4),
+            "d_Embutido": round(re_["d"],3),
+            "Sig_Emb": "✓" if sig_e else "",
+            "p_Upload": round(rm_["p"],4),
+            "d_Upload": round(rm_["d"],3),
+            "Sig_Upload": "✓" if sig_m else "",
+            "Δd": round(rm_["d"]-re_["d"],3),
+        })
+
+    df_cmp = pd.DataFrame(cmp_rows)
+    n_both  = len(df_cmp[df_cmp["Status"]=="✅ Ambos significativos"])
+    n_emb   = len(df_cmp[df_cmp["Status"]=="📁 Só Embutido"])
+    n_upl   = len(df_cmp[df_cmp["Status"]=="📤 Só Upload"])
+    n_none  = len(df_cmp[df_cmp["Status"]=="❌ Nenhum"])
+
+    # Metrics
+    c1,c2,c3,c4 = st.columns(4)
+    c1.metric("✅ Ambos sig.", n_both)
+    c2.metric("📁 Só Embutido", n_emb)
+    c3.metric("📤 Só Upload", n_upl)
+    c4.metric("❌ Nenhum", n_none)
+
+    # Filter
+    filt_opt = st.radio("Filtrar por",
+                        ["Todos","✅ Ambos","📁 Só Embutido","📤 Só Upload","❌ Nenhum",
+                         "Mudaram (emb ≠ upload)"],
+                        horizontal=True, key="cmp_mode_filt")
+    if   filt_opt=="✅ Ambos":               df_show = df_cmp[df_cmp["Status"]=="✅ Ambos significativos"]
+    elif filt_opt=="📁 Só Embutido":         df_show = df_cmp[df_cmp["Status"]=="📁 Só Embutido"]
+    elif filt_opt=="📤 Só Upload":           df_show = df_cmp[df_cmp["Status"]=="📤 Só Upload"]
+    elif filt_opt=="❌ Nenhum":              df_show = df_cmp[df_cmp["Status"]=="❌ Nenhum"]
+    elif filt_opt=="Mudaram (emb ≠ upload)": df_show = df_cmp[df_cmp["Status"].isin(["📁 Só Embutido","📤 Só Upload"])]
+    else:                                    df_show = df_cmp
+
+    color_map_s = {"✅ Ambos significativos":"#dcfce7","📁 Só Embutido":"#dbeafe",
+                   "📤 Só Upload":"#fef9c3","❌ Nenhum":"#f3f4f6"}
+    def cs(v): return f"background-color:{color_map_s.get(v,'')}"
+
+    try:    styled = df_show.style.map(cs, subset=["Status"])
+    except: styled = df_show.style.applymap(cs, subset=["Status"])
+    st.dataframe(styled, use_container_width=True, hide_index=True)
+
+    # Scatter d Cohen
+    if not df_cmp.empty:
+        st.markdown("### 📈 d Cohen: Embutido vs Upload")
+        color_dot = {"✅ Ambos significativos":C_CTRL,"📁 Só Embutido":"#1d4ed8",
+                     "📤 Só Upload":C_DIFF,"❌ Nenhum":"#9e9e9e"}
+        fig = go.Figure()
+        for s, col in color_dot.items():
+            sub = df_cmp[df_cmp["Status"]==s]
+            if sub.empty: continue
+            fig.add_trace(go.Scatter(
+                x=sub["d_Embutido"], y=sub["d_Upload"],
+                mode="markers+text", text=sub["Métrica"],
+                textposition="top center", textfont=dict(size=9),
+                name=s, marker=dict(color=col, size=9, opacity=0.8)
+            ))
+        mn_ = min(df_cmp["d_Embutido"].min(), df_cmp["d_Upload"].min()) - 0.3
+        mx_ = max(df_cmp["d_Embutido"].max(), df_cmp["d_Upload"].max()) + 0.3
+        fig.add_trace(go.Scatter(x=[mn_,mx_], y=[mn_,mx_], mode="lines",
+                                 line=dict(color="#9e9e9e",dash="dash",width=1), showlegend=False))
+        fig.add_hline(y=0, line=dict(color="#e0e0e0",width=1))
+        fig.add_vline(x=0, line=dict(color="#e0e0e0",width=1))
+        fig.update_layout(**sq_layout(title="d Cohen Embutido × Upload"),
+                          xaxis_title="d Cohen — Embutido",
+                          yaxis_title="d Cohen — Upload")
+        st.plotly_chart(fig, use_container_width=False)
+
+    # APA text boxes
+    changed = df_cmp[df_cmp["Status"].isin(["📁 Só Embutido","📤 Só Upload"])]
+    interp_cmp = (
+        f"Comparação de significância entre Mobile embutido e Mobile upload:\n\n"
+        f"• ✅ Ambos sig. ({n_both}): resultado consistente entre fontes de dados — "
+        f"a diferença entre FALL e CTRL existe independente da origem dos dados.\n\n"
+        f"• 📁 Só Embutido ({n_emb}): métricas que eram significativas nos dados "
+        f"originais mas não no novo arquivo. Possíveis causas: tamanho amostral diferente, "
+        f"heterogeneidade da nova amostra, ou diferença no protocolo de coleta.\n\n"
+        f"• 📤 Só Upload ({n_upl}): métricas que emergiram como significativas apenas "
+        f"no novo arquivo. Pode indicar maior sensibilidade da nova amostra ou diferença "
+        f"nas características do grupo.\n\n"
+        f"• ❌ Nenhum ({n_none}): métricas sem diferença em nenhuma das fontes.\n\n"
+        f"Atenção às fases: verificar se as discrepâncias se concentram em P1 (preparo), "
+        f"P2 (levantar) ou P3 (sentar) para identificar padrão sistemático."
+    )
+    three_boxes(
+        f"Comparação de significância (Mann-Whitney U, p<0,05) entre dados Mobile embutidos "
+        f"(n_FALL={len(fall_ind)}, n_CTRL={len(ctrl_ind)}) e dados Mobile do arquivo carregado "
+        f"(n total={len(df_mob)}). Foram comparadas {len(common)} métricas em comum ({sheet_sel}).",
+        f"Métricas em comum: {len(common)}. Ambos sig.: {n_both} | "
+        f"Só Embutido: {n_emb} | Só Upload: {n_upl} | Nenhum: {n_none}.\n"
+        + ("Variáveis que mudaram:\n" + "\n".join(
+            f"  • {r['Métrica']}: {r['Status']} (d_emb={r['d_Embutido']}, d_upl={r['d_Upload']})"
+            for _, r in changed.iterrows()
+        ) if not changed.empty else "Nenhuma variável mudou de significância."),
+        interp_cmp, "cmp_mode_txt"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # HEADER + SOURCE SELECTOR
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("""<div class="main-header">
@@ -1741,8 +1906,10 @@ st.markdown("""<div class="main-header">
 </div>""", unsafe_allow_html=True)
 
 data_source = st.radio("**Fonte dos dados**",
-                       ["📁 Dados embutidos","📤 Upload de arquivo"], horizontal=True)
-use_upload = data_source == "📤 Upload de arquivo"
+                       ["📁 Dados embutidos","📤 Upload de arquivo","📊 Comparação de dados"],
+                       horizontal=True)
+use_upload     = data_source == "📤 Upload de arquivo"
+use_comparison = data_source == "📊 Comparação de dados"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MODO UPLOAD
@@ -1800,6 +1967,9 @@ if use_upload:
 
     st.stop()
 
+if use_comparison:
+    render_comparison_mode()
+    st.stop()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MODO EMBUTIDO — curvas
