@@ -2123,6 +2123,10 @@ st.markdown(f"""<div style="margin-bottom:16px">
 tab1,tab3,tab5,tab_box,tab_adv=st.tabs(["📈 Curvas Resultantes","🔬 Análise Temporal (SPM)","🧬 Análise da Forma das Curvas","📦 Dispersão Individual","🔬 Análises Avançadas + Texto APA"])
 
 with tab1:
+    _exclusion_banner(key="_excl_emb", label="Embutido")
+    if st.session_state.get("_excl_emb"):
+        st.info("ℹ️ As **curvas médias** são pré-computadas a partir de todos os sujeitos originais — "
+                "não mudam com a exclusão. Para ver o impacto nas métricas individuais, acesse **📦 Dispersão Individual** e **🔬 Análises Avançadas**.")
     fig=make_subplots(specs=[[{"secondary_y":True}]])
     fig.add_trace(go.Scatter(x=np.concatenate([fase,fase[::-1]]),y=np.concatenate([fhi,flo[::-1]]),
                              fill="toself",fillcolor=C_FALL_BG,line=dict(color="rgba(0,0,0,0)"),name="FALL ±1DP"),secondary_y=False)
@@ -2161,6 +2165,9 @@ with tab1:
                 "emb_curves")
 
 with tab3:
+    _exclusion_banner(key="_excl_emb", label="Embutido")
+    if st.session_state.get("_excl_emb"):
+        st.info("ℹ️ Curvas pré-computadas — não afetadas pela exclusão de sujeitos.")
     st.markdown("""<div class="info-box"><strong>SPM-like z-test</strong>:
     z = (CTRL−FALL)/√(DP²_CTRL/n_CTRL + DP²_FALL/n_FALL). Threshold ±1.96 (α=0.05).
     </div>""",unsafe_allow_html=True)
@@ -2204,6 +2211,9 @@ with tab3:
                 "emb_spm")
 
 with tab5:
+    _exclusion_banner(key="_excl_emb", label="Embutido")
+    if st.session_state.get("_excl_emb"):
+        st.info("ℹ️ Curvas pré-computadas — não afetadas pela exclusão de sujeitos.")
     st.markdown("### CV% ao longo da fase")
     cv_f=np.where(np.abs(fm)>0.01,fdp/np.abs(fm)*100,np.nan)
     cv_c=np.where(np.abs(cm)>0.01,cdp/np.abs(cm)*100,np.nan)
@@ -2277,8 +2287,14 @@ with tab_box:
 
     # Build combined df with Grupo column
     _exclusion_banner(key="_excl_emb", label="Embutido")
-    df_emb_b = pd.concat([_apply_excl(ctrl_ind, "_excl_emb").assign(Grupo="CONTROLE"),
-                           _apply_excl(fall_ind, "_excl_emb").assign(Grupo="FALL")], ignore_index=True)
+    _f_filt = _apply_excl(fall_ind,  "_excl_emb")
+    _c_filt = _apply_excl(ctrl_ind,  "_excl_emb")
+    _excl_now = st.session_state.get("_excl_emb", [])
+    if _excl_now:
+        st.caption(f"✂️ Analisando {len(_f_filt)} FALL e {len(_c_filt)} CONTROLE "
+                   f"(excluídos: {', '.join(_excl_now)})")
+    df_emb_b = pd.concat([_c_filt.assign(Grupo="CONTROLE"),
+                           _f_filt.assign(Grupo="FALL")], ignore_index=True)
     mc_emb_b = [c for c in fall_ind.columns[1:]
                 if pd.to_numeric(fall_ind[c], errors='coerce').notna().sum() > 3]
     mc_emb_b = [c for c in mc_emb_b if c not in META_COLS]
@@ -2453,11 +2469,16 @@ with tab_box:
         st.warning("Nenhuma métrica numérica encontrada nos dados embutidos.")
 
 with tab_adv:
-    _mc_emb = [c for c in fall_ind.columns[1:]
-               if pd.to_numeric(fall_ind[c], errors='coerce').notna().sum() > 3]
+    _exclusion_banner(key="_excl_emb", label="Embutido")
+    _excl_emb_list = st.session_state.get("_excl_emb", [])
+    _fall_filt  = _apply_excl(fall_ind,  "_excl_emb")
+    _ctrl_filt  = _apply_excl(ctrl_ind,  "_excl_emb")
+    if _excl_emb_list:
+        st.caption(f"Análise com {len(_fall_filt)} FALL e {len(_ctrl_filt)} CONTROLE "
+                   f"(excluídos: {', '.join(_excl_emb_list)})")
     render_advanced_tab(
-        pd.concat([_apply_excl(ctrl_ind, "_excl_emb").assign(Grupo="CONTROLE"),
-                   _apply_excl(fall_ind, "_excl_emb").assign(Grupo="FALL")]),
+        pd.concat([_ctrl_filt.assign(Grupo="CONTROLE"),
+                   _fall_filt.assign(Grupo="FALL")]),
         "CONTROLE", "FALL", ks="emb"
     )
 
