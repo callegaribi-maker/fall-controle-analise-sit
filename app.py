@@ -1567,6 +1567,110 @@ def render_validation_tab(sheets, sheet_names, g1_name, g2_name):
                          xaxis_title="Kinem", yaxis_title="Mobile")
     st.plotly_chart(fig_sc, use_container_width=False)
 
+    # ── Outlier / Discrepancy Analysis ───────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 🔴 Sujeitos mais discrepantes entre Kinem e Mobile")
+    st.markdown("""<div class="info-box">
+    Para cada métrica, calcula o z-score da diferença (Kinem − Mobile) de cada sujeito.
+    O <strong>Score de Discrepância</strong> é a média dos |z-scores| em todas as métricas —
+    quanto maior, mais o sujeito diverge entre os dois dispositivos.
+    Sujeitos com score &gt; 2 ou fora dos Limites de Concordância (LoA) do Bland-Altman
+    são marcados como <strong>outliers</strong>.
+    </div>""", unsafe_allow_html=True)
+
+    # Build matrix: rows = subjects, cols = metrics
+    subj_all = subj_labels[:n]
+    diff_matrix = {}   # col → array of diffs per subject
+    for row_r in rows:
+        col = row_r["Métrica"]
+        d   = row_r["_diffs"]          # already length n_p
+        sd_ = row_r["SD_diff"]
+        bi_ = row_r["Bias"]
+        if sd_ > 0:
+            z = (d - bi_) / sd_          # z-score of each subject's diff
+        else:
+            z = np.zeros(len(d))
+        diff_matrix[col] = z[:n]         # align to n subjects
+
+    if diff_matrix:
+        # Score = mean of |z| across metrics per subject
+        cols_d  = list(diff_matrix.keys())
+        mat     = np.column_stack([diff_matrix[c] for c in cols_d])  # (n_subj, n_metrics)
+        scores  = np.nanmean(np.abs(mat), axis=1)
+
+        # Outside LoA count per subject
+        loa_out = np.zeros(n, dtype=int)
+        for row_r in rows:
+            col = row_r["Métrica"]
+            raw_d = row_r["_diffs"][:n]
+            lo_   = row_r["LoA_lo"]; hi_ = row_r["LoA_hi"]
+            loa_out += ((raw_d < lo_) | (raw_d > hi_)).astype(int)
+
+        df_out = pd.DataFrame({
+            "Sujeito":           subj_all,
+            "Score discrepância": np.round(scores, 3),
+            "Métricas fora LoA": loa_out,
+            "Outlier":           ["⚠️ Sim" if s > 2 or o > len(cols_d)//3 else "✅ Ok"
+                                  for s, o in zip(scores, loa_out)]
+        }).sort_values("Score discrepância", ascending=False).reset_index(drop=True)
+
+        # Color top outliers
+        def color_out(v):
+            return "background-color:#fee2e2" if v == "⚠️ Sim" else ""
+        try:    styled_out = df_out.style.map(color_out, subset=["Outlier"])
+        except: styled_out = df_out.style.applymap(color_out, subset=["Outlier"])
+
+        n_out = int((df_out["Outlier"]=="⚠️ Sim").sum())
+        ca_, cb_, cc_ = st.columns(3)
+        ca_.metric("Total sujeitos", n)
+        cb_.metric("⚠️ Outliers", n_out)
+        cc_.metric("% outliers", f"{n_out/n*100:.0f}%")
+
+        st.dataframe(styled_out, use_container_width=True, hide_index=True)
+
+        # Heatmap |z-score| — subject × metric
+        if len(cols_d) > 1 and n >= 3:
+            st.markdown("#### 🗺️ Mapa de discrepância por sujeito × métrica (|z-score|)")
+            subj_order = df_out["Sujeito"].tolist()
+            idx_order  = [list(subj_all).index(s) for s in subj_order if s in list(subj_all)]
+            mat_ordered = np.abs(mat[idx_order, :])
+
+            fig_heat = go.Figure(go.Heatmap(
+                z=mat_ordered,
+                x=cols_d,
+                y=[subj_all[i] for i in idx_order],
+                colorscale="Reds",
+                zmin=0, zmax=3,
+                colorbar=dict(title="|z|"),
+                hovertemplate="Sujeito: <b>%{y}</b><br>Métrica: <b>%{x}</b><br>|z| = %{z:.2f}<extra></extra>"
+            ))
+            h_heat = max(350, n * 22)
+            w_heat = max(500, len(cols_d) * 55)
+            fig_heat.update_layout(**base_layout(h=h_heat, w=w_heat),
+                                   xaxis=dict(tickangle=-40, tickfont=dict(size=9)),
+                                   yaxis=dict(tickfont=dict(size=9)),
+                                   title="Discrepância Kinem−Mobile por sujeito (vermelho = maior divergência)")
+            st.plotly_chart(fig_heat, use_container_width=False)
+
+        # Top outlier detail
+        if n_out > 0:
+            st.markdown("#### 🔍 Métricas mais discrepantes nos outliers")
+            outlier_names = df_out[df_out["Outlier"]=="⚠️ Sim"]["Sujeito"].tolist()
+            sel_out = st.selectbox("Sujeito outlier", outlier_names, key="out_sel")
+            idx_sel = list(subj_all).index(sel_out)
+            z_sel   = mat[idx_sel, :]
+            df_met_out = pd.DataFrame({
+                "Métrica":   cols_d,
+                "|z-score|": np.round(np.abs(z_sel), 3),
+                "Kinem":     [np.round(rows[i]["_x"][idx_sel], 4) if idx_sel < len(rows[i]["_x"]) else "–"
+                              for i, c in enumerate(cols_d) if c == rows[i]["Métrica"] or True][:len(cols_d)],
+                "Mobile":    [np.round(rows[i]["_y"][idx_sel], 4) if idx_sel < len(rows[i]["_y"]) else "–"
+                              for i, c in enumerate(cols_d) if c == rows[i]["Métrica"] or True][:len(cols_d)],
+                "Diferença": [np.round(rows[i]["_diffs"][idx_sel], 4) if idx_sel < len(rows[i]["_diffs"]) else "–"
+                              for i, c in enumerate(cols_d) if c == rows[i]["Métrica"] or True][:len(cols_d)],
+            }).sort_values("|z-score|", ascending=False).reset_index(drop=True)
+            st.dataframe(df_met_out, use_container_width=True, hide_index=True)
+
     # APA text
     icc_exc = [r for r in rows if r["ICC"]>0.90]
     icc_good = [r for r in rows if 0.75<=r["ICC"]<=0.90]
