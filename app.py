@@ -1497,7 +1497,11 @@ def render_validation_tab(sheets, sheet_names, g1_name, g2_name):
         if v>0.75: return "background-color:#d1fae5"
         if v>0.50: return "background-color:#fef9c3"
         return "background-color:#fee2e2"
-    st.dataframe(df_icc.style.applymap(color_icc, subset=["ICC"]), use_container_width=True, hide_index=True)
+    try:
+        styled = df_icc.style.map(color_icc, subset=["ICC"])
+    except AttributeError:
+        styled = df_icc.style.applymap(color_icc, subset=["ICC"])
+    st.dataframe(styled, use_container_width=True, hide_index=True)
 
     # Bland-Altman for selected metric
     st.markdown("### 📉 Bland-Altman")
@@ -1668,8 +1672,11 @@ def render_sig_comparison_tab(sheets, sheet_names, g1_name, g2_name):
         c = {"✅ Ambos":"#dcfce7","⚙️ Só Kinem":"#dbeafe","📱 Só Mobile":"#fef9c3","❌ Nenhum":"#f3f4f6"}
         return f"background-color:{c.get(v,'')}"
 
-    st.dataframe(df_show.style.applymap(color_status, subset=["Status"]),
-                 use_container_width=True, hide_index=True)
+    try:
+        styled_cmp = df_show.style.map(color_status, subset=["Status"])
+    except AttributeError:
+        styled_cmp = df_show.style.applymap(color_status, subset=["Status"])
+    st.dataframe(styled_cmp, use_container_width=True, hide_index=True)
 
     # Bubble chart: d_kinem vs d_mobile
     if not df_cmp.empty:
