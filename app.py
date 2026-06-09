@@ -148,6 +148,33 @@ def lda_2g(X, y):
     except Exception:
         return None, None, None, None
 
+def compute_icc_21(x, y):
+    """ICC(2,1) — two-way mixed, absolute agreement. Returns icc, ci_lo, ci_hi, sem, mdc95, p."""
+    x = np.asarray(x, float); y = np.asarray(y, float)
+    n = len(x); k = 2
+    if n < 3: return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+    M = np.column_stack([x, y])
+    grand = M.mean(); row_m = M.mean(1); col_m = M.mean(0)
+    SSR = k * np.sum((row_m - grand)**2)
+    SSC = n * np.sum((col_m - grand)**2)
+    SSE = np.sum((M - grand)**2) - SSR - SSC
+    MSR = SSR / (n-1); MSC = SSC / (k-1)
+    df_e = (n-1)*(k-1); MSE = max(SSE / df_e, 1e-12) if df_e > 0 else 1e-12
+    icc = (MSR - MSE) / (MSR + (k-1)*MSE + k/n*(MSC - MSE))
+    icc = float(np.clip(icc, -1, 1))
+    F1 = MSR / MSE
+    Fl = stats.f.ppf(0.975, n-1, df_e); Fu = stats.f.ppf(0.025, n-1, df_e)
+    ci_lo = float(np.clip((F1/Fl - 1)/(F1/Fl + k-1), -1, 1))
+    ci_hi = float(np.clip((F1/Fu - 1)/(F1/Fu + k-1), -1, 1))
+    sem   = float(np.sqrt(MSE))
+    mdc95 = float(sem * 1.96 * np.sqrt(2))
+    p_val = float(1 - stats.f.cdf(F1, n-1, df_e))
+    return icc, ci_lo, ci_hi, sem, mdc95, p_val
+
+def icc_quality(v):
+    if np.isnan(v): return "–"
+    return "Excelente" if v>0.90 else "Bom" if v>0.75 else "Moderado" if v>0.50 else "Fraco"
+
 def permutation_pval(a, b, n=1000):
     obs,_ = stats.mannwhitneyu(a, b, alternative='two-sided')
     comb  = np.concatenate([a,b]); na = len(a); cnt = 0
@@ -231,14 +258,14 @@ def render_stats_table(results, g1_s, g2_s, ks):
     eff_c = {"trivial":"#9e9e9e","pequeno":"#1976d2","médio":"#f59e0b","grande":"#e53935"}
     _,cs = st.columns([3,1])
     with cs:
-        filt = st.selectbox("Filtrar",["Todas","Significativas (p adj<0.05)","Efeito grande (|d|>0.8)"],
+        filt = st.selectbox("Filtrar",["Todas","Significativas (p<0.05)","Efeito grande (|d|>0.8)"],
                             label_visibility="collapsed", key=f"filt_{ks}")
-    shown = ([r for r in results if r["padj"]<0.05] if filt=="Significativas (p adj<0.05)"
+    shown = ([r for r in results if r["p"]<0.05] if filt=="Significativas (p<0.05)"
              else [r for r in results if abs(r["d"])>0.8] if filt=="Efeito grande (|d|>0.8)"
              else results)
     rows=""
     for r in shown:
-        sig  = r["padj"]<0.05; rc = 'class="sig-row"' if sig else ""
+        sig  = r["p"]<0.05; rc = 'class="sig-row"' if sig else ""
         dc   = "#e53935" if abs(r["d"])>0.8 else "#f59e0b" if abs(r["d"])>0.5 else "#1976d2" if abs(r["d"])>0.2 else "#757575"
         ds   = "+" if r["d_pct"]>=0 else ""; eff=effect_label(r["d"]); ec=eff_c[eff]
         rows += f"""<tr {rc}>
@@ -486,9 +513,9 @@ def render_risk_score(results, g1_df, g2_df, g1_s, g2_s, g1_name, g2_name, ks):
     Score composto ponderado por |d de Cohen|, construído com métricas significativas (p adj &lt; 0.05).
     Score mais alto = maior similaridade com o perfil FALL.
     </div>""", unsafe_allow_html=True)
-    sig_r = [r for r in results if r.get("padj",1)<0.05]
+    sig_r = [r for r in results if r.get("p",1)<0.05]
     if not sig_r:
-        st.info("Nenhuma métrica significativa (p adj < 0.05) para compor o score."); return
+        st.info("Nenhuma métrica significativa (p < 0.05) para compor o score."); return
     thresh = st.slider("Mínimo |d| para incluir no score", 0.0, 2.0, 0.2, 0.1, key=f"sc_{ks}")
     sig_r  = [r for r in sig_r if abs(r["d"])>=thresh]
     if not sig_r:
@@ -702,11 +729,10 @@ def apa_m_stats(n1, n2, g1_s, g2_s, nm):
 
 def apa_r_stats(results, g1_s, g2_s):
     n_total = len(results)
-    sig = sorted([r for r in results if r.get("padj",1)<0.05], key=lambda r: abs(r["d"]), reverse=True)
+    sig = sorted([r for r in results if r.get("p",1)<0.05], key=lambda r: abs(r["d"]), reverse=True)
     if not sig:
         return (f"No statistically significant differences were observed between {g2_s} and "
-                f"{g1_s} for any of the {n_total} kinematic metrics assessed following "
-                f"Benjamini-Hochberg FDR correction (all p_adj > 0.05).")
+                f"{g1_s} for any of the {n_total} kinematic metrics assessed (all p > 0.05).")
     large = [r for r in sig if abs(r["d"])>=0.8]
     mod   = [r for r in sig if 0.5<=abs(r["d"])<0.8]
     small = [r for r in sig if abs(r["d"])<0.5]
@@ -1022,7 +1048,7 @@ def _motor_meaning(col, direction, g2_s):
     return f"Diferença no controle motor de {g2_s} durante essa fase."
 
 def apa_i_stats(results, g1_s, g2_s):
-    sig = sorted([r for r in results if r.get("padj",1)<0.05], key=lambda r: abs(r["d"]), reverse=True)
+    sig = sorted([r for r in results if r.get("p",1)<0.05], key=lambda r: abs(r["d"]), reverse=True)
     if not sig:
         return (f"Nenhuma diferença significativa detectada entre {g2_s} e {g1_s}.\n"
                 f"Os grupos apresentam perfis cinemáticos similares nas três fases: "
@@ -1362,7 +1388,7 @@ def render_advanced_tab(df_sub, g1_name, g2_name, ks):
 
     # ── Risk Score
     st.markdown("### 🟡 Score Composto de Risco")
-    sig_r = [r for r in results if r.get("padj",1)<0.05]
+    sig_r = [r for r in results if r.get("p",1)<0.05]
     render_risk_score(results,g1_df,g2_df,g1_s,g2_s,g1_name,g2_name,ks+"_rs")
     score_res = None
     if sig_r:
@@ -1409,6 +1435,297 @@ def render_advanced_tab(df_sub, g1_name, g2_name, ks):
                 apa_i_bootstrap(), ks+"_boot_t")
 
 # ══════════════════════════════════════════════════════════════════════════════
+# VALIDAÇÃO KINEM × MOBILE
+# ══════════════════════════════════════════════════════════════════════════════
+def render_validation_tab(sheets, sheet_names, g1_name, g2_name):
+    st.markdown("## 🔬 Validação Kinem × Mobile")
+    st.markdown("""<div class="info-box">
+    Comparação entre dispositivos para os mesmos sujeitos (pareado por ordem de linha).<br>
+    <strong>ICC(2,1)</strong> concordância absoluta · <strong>SEM</strong> erro padrão de medição ·
+    <strong>MDC₉₅</strong> mudança mínima detectável · <strong>Bland-Altman</strong> limites de concordância.
+    </div>""", unsafe_allow_html=True)
+
+    sheet_sel = st.selectbox("Aba (eixo)", sheet_names, key="val_sheet")
+    df_all = sheets[sheet_sel]
+    df_k = filt_dev(df_all, "kinem").reset_index(drop=True)
+    df_m = filt_dev(df_all, "mobil").reset_index(drop=True)
+    if df_k.empty or df_m.empty:
+        st.warning("Dados de Kinem ou Mobile não encontrados."); return
+
+    mc = get_metric_cols(df_k)
+    mc = [c for c in mc if c in df_m.columns]
+    if not mc:
+        st.warning("Nenhuma métrica em comum entre Kinem e Mobile."); return
+
+    n = min(len(df_k), len(df_m))
+    st.info(f"N pareado = {n} sujeitos")
+
+    rows = []
+    for col in mc:
+        x = pd.to_numeric(df_k[col].iloc[:n], errors="coerce").dropna()
+        y = pd.to_numeric(df_m[col].iloc[:len(x)], errors="coerce").dropna()
+        if len(x) < 3: continue
+        n_p = len(x)
+        icc, ci_lo, ci_hi, sem, mdc95, p_icc = compute_icc_21(x.values, y.values[:n_p])
+        r_p, p_r = stats.pearsonr(x.values, y.values[:n_p])
+        diffs = x.values - y.values[:n_p]
+        bias  = float(np.mean(diffs))
+        sd_d  = float(np.std(diffs, ddof=1))
+        loa_lo = bias - 1.96*sd_d
+        loa_hi = bias + 1.96*sd_d
+        rows.append(dict(
+            Métrica=col, n=n_p,
+            ICC=round(icc,3), CI_95=f"[{ci_lo:.3f}, {ci_hi:.3f}]",
+            Qualidade=icc_quality(icc), p_ICC=round(p_icc,4),
+            SEM=round(sem,4), MDC95=round(mdc95,4),
+            Pearson_r=round(r_p,3), p_r=round(p_r,4),
+            Bias=round(bias,4), SD_diff=round(sd_d,4),
+            LoA_lo=round(loa_lo,4), LoA_hi=round(loa_hi,4),
+            _x=x.values, _y=y.values[:n_p], _diffs=diffs
+        ))
+
+    if not rows:
+        st.warning("Métricas insuficientes para validação."); return
+
+    # Color-coded table
+    df_icc = pd.DataFrame([{k:v for k,v in r.items() if not k.startswith("_")} for r in rows])
+    st.markdown("### 📊 Tabela de Validação")
+    def color_icc(v):
+        try: v=float(v)
+        except: return ""
+        if v>0.90: return "background-color:#dcfce7"
+        if v>0.75: return "background-color:#d1fae5"
+        if v>0.50: return "background-color:#fef9c3"
+        return "background-color:#fee2e2"
+    st.dataframe(df_icc.style.applymap(color_icc, subset=["ICC"]), use_container_width=True, hide_index=True)
+
+    # Bland-Altman for selected metric
+    st.markdown("### 📉 Bland-Altman")
+    met_sel = st.selectbox("Métrica para B-A", [r["Métrica"] for r in rows], key="ba_met")
+    row = next(r for r in rows if r["Métrica"]==met_sel)
+    x_v, y_v, diffs = row["_x"], row["_y"], row["_diffs"]
+    means_v = (x_v + y_v) / 2
+    bias_v = row["Bias"]; sd_v = row["SD_diff"]
+    loa_hi_v = row["LoA_hi"]; loa_lo_v = row["LoA_lo"]
+
+    fig_ba = go.Figure()
+    fig_ba.add_trace(go.Scatter(x=means_v, y=diffs, mode="markers",
+                                marker=dict(color=C_FALL, size=8, opacity=0.8),
+                                name="Sujeitos",
+                                hovertemplate="Média=%{x:.3f}<br>Dif=%{y:.3f}<extra></extra>"))
+    for val, label, color in [(bias_v,"Bias",C_DIFF),(loa_hi_v,"LoA+",C_CTRL),(loa_lo_v,"LoA−",C_CTRL)]:
+        fig_ba.add_hline(y=val, line=dict(color=color, dash="dash" if "LoA" in label else "solid", width=1.5),
+                         annotation_text=f"{label}={val:.3f}", annotation_position="right")
+    fig_ba.update_layout(**base_layout(h=SQ, w=SQ),
+                         xaxis_title="Média Kinem+Mobile", yaxis_title="Diferença Kinem−Mobile",
+                         title=f"Bland-Altman — {met_sel}")
+    c1, c2 = st.columns([1,1])
+    with c1: st.plotly_chart(fig_ba, use_container_width=False)
+    with c2:
+        st.markdown("**Métricas B-A**")
+        ba_info = pd.DataFrame({
+            "": ["Bias","SD diff","LoA inferior","LoA superior","ICC","SEM","MDC95","Qualidade ICC"],
+            "Valor": [f"{bias_v:.4f}", f"{sd_v:.4f}", f"{loa_lo_v:.4f}", f"{loa_hi_v:.4f}",
+                      f"{row['ICC']:.3f}", f"{row['SEM']:.4f}", f"{row['MDC95']:.4f}", row["Qualidade"]]
+        })
+        st.dataframe(ba_info, hide_index=True, use_container_width=True)
+        st.markdown(f"""
+| | |
+|---|---|
+| Pearson r | {row['Pearson_r']:.3f} (p={row['p_r']:.4f}) |
+| ICC (2,1) | {row['ICC']:.3f} [{row['CI_95']}] |
+| p ICC | {row['p_ICC']:.4f} |
+""")
+
+    # Scatter Kinem vs Mobile
+    st.markdown("### 📈 Correlação Kinem vs Mobile")
+    fig_sc = go.Figure()
+    fig_sc.add_trace(go.Scatter(x=x_v, y=y_v, mode="markers",
+                                marker=dict(color=C_CTRL, size=9, opacity=0.8),
+                                hovertemplate="Kinem=%{x:.3f}<br>Mobile=%{y:.3f}<extra></extra>"))
+    mn_v = min(x_v.min(), y_v.min()); mx_v = max(x_v.max(), y_v.max())
+    fig_sc.add_trace(go.Scatter(x=[mn_v,mx_v], y=[mn_v,mx_v], mode="lines",
+                                line=dict(color="#9e9e9e", dash="dash", width=1.2), name="Identidade"))
+    fig_sc.update_layout(**sq_layout(title=f"Kinem vs Mobile — {met_sel}"),
+                         xaxis_title="Kinem", yaxis_title="Mobile")
+    st.plotly_chart(fig_sc, use_container_width=False)
+
+    # APA text
+    icc_exc = [r for r in rows if r["ICC"]>0.90]
+    icc_good = [r for r in rows if 0.75<=r["ICC"]<=0.90]
+    n_val = len(rows)
+    methods_val = (
+        f"Device agreement between the Kinematic sensor (Kinem) and Mobile sensor was assessed "
+        f"for {n_val} metrics (n = {n} paired subjects) using the Intraclass Correlation Coefficient "
+        f"ICC(2,1) — two-way mixed model, absolute agreement, single measures (Shrout & Fleiss, 1979; "
+        f"Koo & Mae, 2016). ICC values were classified as: poor (<0.50), moderate (0.50–0.75), "
+        f"good (0.75–0.90), excellent (>0.90). The Standard Error of Measurement was estimated as "
+        f"SEM = √MSE, and the Minimal Detectable Change at 95% confidence as MDC₉₅ = SEM × 1.96 × √2. "
+        f"Systematic bias and 95% Limits of Agreement (LoA = bias ± 1.96×SD_diff) were assessed via "
+        f"Bland-Altman analysis (Bland & Altman, 1986). Pearson r was also reported."
+    )
+    results_val = (
+        f"ICC(2,1) analysis across {n_val} metrics:\n"
+        f"  • Excellent (ICC>0.90): {len(icc_exc)} metric(s)\n"
+        f"  • Good (0.75–0.90): {len(icc_good)} metric(s)\n"
+        f"  • Others: {n_val-len(icc_exc)-len(icc_good)} metric(s)\n\n"
+    )
+    if icc_exc:
+        results_val += "Best agreement:\n" + "\n".join(
+            f"  • {r['Métrica']}: ICC={r['ICC']:.3f} {r['CI_95']}, "
+            f"SEM={r['SEM']:.4f}, MDC95={r['MDC95']:.4f}, Bias={r['Bias']:.4f} [{r['LoA_lo']:.4f}, {r['LoA_hi']:.4f}]"
+            for r in sorted(icc_exc, key=lambda x: x["ICC"], reverse=True)[:5]
+        )
+    interp_val = (
+        f"Interpretação clínica da concordância Kinem × Mobile:\n\n"
+        f"• ICC excelente (>0,90): as duas tecnologias são intercambiáveis para essa métrica — "
+        f"o Mobile pode substituir o Kinem sem perda clínica relevante.\n"
+        f"• ICC bom (0,75–0,90): concordância adequada para uso clínico com cautela.\n"
+        f"• ICC moderado/fraco (<0,75): as medidas diferem de forma clinicamente relevante — "
+        f"NÃO usar como substitutos sem ajuste de calibração.\n\n"
+        f"MDC95 representa a mudança mínima necessária para ser considerada real (acima do ruído de medição). "
+        f"Bias sistemático no Bland-Altman indica tendência constante de um dispositivo medir mais alto ou mais baixo.\n\n"
+        f"Fases afetadas (P1=preparo, P2=levantar, P3=sentar): avaliar se a discrepância entre "
+        f"dispositivos é maior em fases de alta aceleração (P2) onde o sinal é mais exigido."
+    )
+    three_boxes(methods_val, results_val, interp_val, "val_kinem_mob")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# COMPARAÇÃO DE SIGNIFICÂNCIA KINEM × MOBILE
+# ══════════════════════════════════════════════════════════════════════════════
+def render_sig_comparison_tab(sheets, sheet_names, g1_name, g2_name):
+    st.markdown("## 📊 Diferenças Kinem × Mobile — Significância")
+    st.markdown("""<div class="info-box">
+    Quais variáveis mudaram de significância (p&lt;0,05) entre o Kinem e o Mobile?<br>
+    Baseado no p bruto (Mann-Whitney) para cada dispositivo.
+    </div>""", unsafe_allow_html=True)
+
+    sheet_sel = st.selectbox("Aba (eixo)", sheet_names, key="cmp_sheet")
+    df_all = sheets[sheet_sel]
+    df_k = filt_dev(df_all, "kinem")
+    df_m = filt_dev(df_all, "mobil")
+    if df_k.empty or df_m.empty:
+        st.warning("Kinem ou Mobile não encontrados."); return
+
+    mc_k = get_metric_cols(df_k); mc_m = get_metric_cols(df_m)
+    res_k = compute_results(mc_k, df_k[df_k["Grupo"].str.strip()==g1_name],
+                            df_k[df_k["Grupo"].str.strip()==g2_name])
+    res_m = compute_results(mc_m, df_m[df_m["Grupo"].str.strip()==g1_name],
+                            df_m[df_m["Grupo"].str.strip()==g2_name])
+
+    # Build comparison dict
+    rk_map = {r["col"]: r for r in res_k}
+    rm_map = {r["col"]: r for r in res_m}
+    all_cols = sorted(set(rk_map) | set(rm_map))
+
+    comparison = []
+    for col in all_cols:
+        rk = rk_map.get(col); rm = rm_map.get(col)
+        sig_k = rk["p"]<0.05 if rk else None
+        sig_m = rm["p"]<0.05 if rm else None
+        if sig_k is None or sig_m is None: continue
+
+        if sig_k and sig_m:     status = "✅ Ambos"
+        elif sig_k and not sig_m: status = "⚙️ Só Kinem"
+        elif not sig_k and sig_m: status = "📱 Só Mobile"
+        else:                     status = "❌ Nenhum"
+
+        comparison.append(dict(
+            Métrica=col,
+            Status=status,
+            p_Kinem=round(rk["p"],4) if rk else "–",
+            d_Kinem=round(rk["d"],3) if rk else "–",
+            p_Mobile=round(rm["p"],4) if rm else "–",
+            d_Mobile=round(rm["d"],3) if rm else "–",
+            Δd=round((rm["d"] if rm else 0) - (rk["d"] if rk else 0), 3)
+        ))
+
+    df_cmp = pd.DataFrame(comparison)
+
+    # Summary counts
+    n_both  = len(df_cmp[df_cmp["Status"]=="✅ Ambos"])
+    n_k     = len(df_cmp[df_cmp["Status"]=="⚙️ Só Kinem"])
+    n_m     = len(df_cmp[df_cmp["Status"]=="📱 Só Mobile"])
+    n_none  = len(df_cmp[df_cmp["Status"]=="❌ Nenhum"])
+
+    c1,c2,c3,c4 = st.columns(4)
+    c1.metric("✅ Ambos significativos", n_both)
+    c2.metric("⚙️ Só Kinem", n_k)
+    c3.metric("📱 Só Mobile", n_m)
+    c4.metric("❌ Nenhum", n_none)
+
+    # Color filter
+    filt = st.radio("Mostrar", ["Todos","Só Kinem","Só Mobile","Mudaram (Kinem ≠ Mobile)","Ambos"],
+                    horizontal=True, key="cmp_filt")
+    if filt == "Só Kinem":        df_show = df_cmp[df_cmp["Status"]=="⚙️ Só Kinem"]
+    elif filt == "Só Mobile":     df_show = df_cmp[df_cmp["Status"]=="📱 Só Mobile"]
+    elif filt == "Mudaram (Kinem ≠ Mobile)": df_show = df_cmp[df_cmp["Status"].isin(["⚙️ Só Kinem","📱 Só Mobile"])]
+    elif filt == "Ambos":         df_show = df_cmp[df_cmp["Status"]=="✅ Ambos"]
+    else:                          df_show = df_cmp
+
+    def color_status(v):
+        c = {"✅ Ambos":"#dcfce7","⚙️ Só Kinem":"#dbeafe","📱 Só Mobile":"#fef9c3","❌ Nenhum":"#f3f4f6"}
+        return f"background-color:{c.get(v,'')}"
+
+    st.dataframe(df_show.style.applymap(color_status, subset=["Status"]),
+                 use_container_width=True, hide_index=True)
+
+    # Bubble chart: d_kinem vs d_mobile
+    if not df_cmp.empty:
+        st.markdown("### 📈 d Cohen: Kinem vs Mobile")
+        df_plot = df_cmp[df_cmp["d_Kinem"]!="–"].copy()
+        df_plot["d_Kinem"]  = df_plot["d_Kinem"].astype(float)
+        df_plot["d_Mobile"] = df_plot["d_Mobile"].apply(lambda x: float(x) if x!="–" else 0)
+        color_map = {"✅ Ambos":C_CTRL,"⚙️ Só Kinem":"#1d4ed8","📱 Só Mobile":C_DIFF,"❌ Nenhum":"#9e9e9e"}
+        fig_b = go.Figure()
+        for s, col in color_map.items():
+            sub = df_plot[df_plot["Status"]==s]
+            if sub.empty: continue
+            fig_b.add_trace(go.Scatter(
+                x=sub["d_Kinem"], y=sub["d_Mobile"], mode="markers+text",
+                text=sub["Métrica"], textposition="top center",
+                textfont=dict(size=9), name=s,
+                marker=dict(color=col, size=9, opacity=0.8)
+            ))
+        mn_d = min(df_plot["d_Kinem"].min(), df_plot["d_Mobile"].min()) - 0.2
+        mx_d = max(df_plot["d_Kinem"].max(), df_plot["d_Mobile"].max()) + 0.2
+        fig_b.add_trace(go.Scatter(x=[mn_d,mx_d], y=[mn_d,mx_d], mode="lines",
+                                   line=dict(color="#9e9e9e",dash="dash",width=1), showlegend=False))
+        fig_b.add_vline(x=0, line=dict(color="#e0e0e0",width=1))
+        fig_b.add_hline(y=0, line=dict(color="#e0e0e0",width=1))
+        fig_b.update_layout(**sq_layout(title="d Cohen Kinem × Mobile"),
+                            xaxis_title="d Cohen — Kinem",
+                            yaxis_title="d Cohen — Mobile")
+        st.plotly_chart(fig_b, use_container_width=False)
+
+    # Clinical interpretation text
+    changed = df_cmp[df_cmp["Status"].isin(["⚙️ Só Kinem","📱 Só Mobile"])]
+    changed_list = "\n".join(f"  • {r['Métrica']}: {r['Status']} (d_K={r['d_Kinem']}, d_M={r['d_Mobile']})"
+                             for _, r in changed.iterrows()[:10])
+    interp_cmp = (
+        f"Comparação de significância Kinem × Mobile:\n\n"
+        f"• Variáveis significativas em AMBOS os dispositivos ({n_both}): "
+        f"resultados consistentes — a diferença entre grupos existe independente da tecnologia.\n\n"
+        f"• Só Kinem ({n_k}): o Kinem detecta diferença que o Mobile não captura. "
+        f"Pode indicar maior sensibilidade do Kinem, ou ruído/atenuação no sinal Mobile.\n\n"
+        f"• Só Mobile ({n_m}): o Mobile detecta diferença que o Kinem não mostra. "
+        f"Menos comum — pode indicar que o posicionamento do Mobile captura variações diferentes.\n\n"
+        f"Variáveis que mudaram de significância:\n{changed_list if changed_list else '  Nenhuma'}\n\n"
+        f"Clinicamente: priorize métricas significativas em AMBOS (maior robustez). "
+        f"Discrepâncias entre dispositivos nas fases P1, P2 e P3 devem orientar a escolha do protocolo."
+    )
+    three_boxes(
+        "Comparação de significância estatística (p<0,05, Mann-Whitney U, bruto) entre dispositivos "
+        "Kinem e Mobile para o mesmo conjunto de sujeitos. Os resultados refletem a sensibilidade de "
+        "cada dispositivo em detectar diferenças entre os grupos nas métricas cinemáticas avaliadas.",
+        f"Total de métricas comparadas: {len(df_cmp)}. "
+        f"Ambos sig.: {n_both} | Só Kinem: {n_k} | Só Mobile: {n_m} | Nenhum: {n_none}.",
+        interp_cmp, "cmp_kinem_mob"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # HEADER + SOURCE SELECTOR
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("""<div class="main-header">
@@ -1449,8 +1766,10 @@ if use_upload:
       Devices: {', '.join(all_devs)} | Abas: {', '.join(sheet_names)}</span>
     </div>""", unsafe_allow_html=True)
     dev_labels = (["⚙️ Kinem"] if has_k else []) + (["📱 Mobile"] if has_m else []) or ["📊 Análise"]
-    dev_tabs   = st.tabs(dev_labels)
-    for dev_tab, dev_label in zip(dev_tabs, dev_labels):
+    extra_tabs = ["🔬 Validação Kinem×Mobile", "📊 Diferenças Kinem×Mobile"] if (has_k and has_m) else []
+    all_dev_tabs = st.tabs(dev_labels + extra_tabs)
+
+    for dev_tab, dev_label in zip(all_dev_tabs[:len(dev_labels)], dev_labels):
         with dev_tab:
             dk = "kinem" if "Kinem" in dev_label else "mobile" if "Mobile" in dev_label else ""
             axis_tabs = st.tabs([f"↕️ {s}" for s in sheet_names])
@@ -1465,6 +1784,13 @@ if use_upload:
                         render_metrics_analysis(df_dev, g1_name, g2_name, key_suffix=ks)
                     with adv_tab:
                         render_advanced_tab(df_dev, g1_name, g2_name, ks=ks+"_adv")
+
+    if has_k and has_m:
+        with all_dev_tabs[-2]:
+            render_validation_tab(sheets, sheet_names, g1_name, g2_name)
+        with all_dev_tabs[-1]:
+            render_sig_comparison_tab(sheets, sheet_names, g1_name, g2_name)
+
     st.stop()
 
 
