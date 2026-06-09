@@ -291,11 +291,17 @@ def render_boxplot(results, g1_df, g2_df, g1_s, g2_s, mc, ks):
     r   = next((x for x in results if x["col"]==met), None)
     if r is None: return
     a, b = r["a"], r["b"]
+    # Subject labels for hover
+    subj_col = next((c for c in ["SUJEITOS ","SUJEITOS","sujeitos"] if c in g1_df.columns), None)
+    s1 = g1_df[subj_col].astype(str).values if subj_col else [f"S{i+1}" for i in range(len(a))]
+    s2 = g2_df[subj_col].astype(str).values if subj_col else [f"S{i+1}" for i in range(len(b))]
     fig  = go.Figure()
-    for vals, name, color in [(a,g1_s,C_CTRL),(b,g2_s,C_FALL)]:
+    for vals, name, color, subj in [(a,g1_s,C_CTRL,s1),(b,g2_s,C_FALL,s2)]:
         fig.add_trace(go.Box(x=[name]*len(vals), y=vals, name=name,
                              marker_color=color, boxmean=True, boxpoints="all",
-                             jitter=0.4, pointpos=0, marker=dict(size=7,opacity=0.7)))
+                             jitter=0.4, pointpos=0, marker=dict(size=7,opacity=0.7),
+                             text=subj[:len(vals)],
+                             hovertemplate="<b>%{text}</b><br>%{y:.4f}<extra></extra>"))
     fig.update_layout(**base_layout(h=SQ), yaxis_title=met, showlegend=False)
     c1,c2 = st.columns([3,2])
     with c1: st.plotly_chart(fig, use_container_width=False)
@@ -1460,6 +1466,10 @@ def render_validation_tab(sheets, sheet_names, g1_name, g2_name):
     n = min(len(df_k), len(df_m))
     st.info(f"N pareado = {n} sujeitos")
 
+    # Subject labels for hover
+    subj_col = next((c for c in ["SUJEITOS ","SUJEITOS","sujeitos"] if c in df_k.columns), None)
+    subj_labels = df_k[subj_col].astype(str).iloc[:n].values if subj_col else [f"S{i+1}" for i in range(n)]
+
     rows = []
     for col in mc:
         x = pd.to_numeric(df_k[col].iloc[:n], errors="coerce").dropna()
@@ -1481,7 +1491,8 @@ def render_validation_tab(sheets, sheet_names, g1_name, g2_name):
             Pearson_r=round(r_p,3), p_r=round(p_r,4),
             Bias=round(bias,4), SD_diff=round(sd_d,4),
             LoA_lo=round(loa_lo,4), LoA_hi=round(loa_hi,4),
-            _x=x.values, _y=y.values[:n_p], _diffs=diffs
+            _x=x.values, _y=y.values[:n_p], _diffs=diffs,
+            _subj=subj_labels[:n_p]
         ))
 
     if not rows:
@@ -1508,6 +1519,7 @@ def render_validation_tab(sheets, sheet_names, g1_name, g2_name):
     met_sel = st.selectbox("Métrica para B-A", [r["Métrica"] for r in rows], key="ba_met")
     row = next(r for r in rows if r["Métrica"]==met_sel)
     x_v, y_v, diffs = row["_x"], row["_y"], row["_diffs"]
+    subj_v = row["_subj"]
     means_v = (x_v + y_v) / 2
     bias_v = row["Bias"]; sd_v = row["SD_diff"]
     loa_hi_v = row["LoA_hi"]; loa_lo_v = row["LoA_lo"]
@@ -1515,8 +1527,8 @@ def render_validation_tab(sheets, sheet_names, g1_name, g2_name):
     fig_ba = go.Figure()
     fig_ba.add_trace(go.Scatter(x=means_v, y=diffs, mode="markers",
                                 marker=dict(color=C_FALL, size=8, opacity=0.8),
-                                name="Sujeitos",
-                                hovertemplate="Média=%{x:.3f}<br>Dif=%{y:.3f}<extra></extra>"))
+                                name="Sujeitos", text=subj_v,
+                                hovertemplate="<b>%{text}</b><br>Média=%{x:.3f}<br>Dif=%{y:.3f}<extra></extra>"))
     for val, label, color in [(bias_v,"Bias",C_DIFF),(loa_hi_v,"LoA+",C_CTRL),(loa_lo_v,"LoA−",C_CTRL)]:
         fig_ba.add_hline(y=val, line=dict(color=color, dash="dash" if "LoA" in label else "solid", width=1.5),
                          annotation_text=f"{label}={val:.3f}", annotation_position="right")
@@ -1546,7 +1558,8 @@ def render_validation_tab(sheets, sheet_names, g1_name, g2_name):
     fig_sc = go.Figure()
     fig_sc.add_trace(go.Scatter(x=x_v, y=y_v, mode="markers",
                                 marker=dict(color=C_CTRL, size=9, opacity=0.8),
-                                hovertemplate="Kinem=%{x:.3f}<br>Mobile=%{y:.3f}<extra></extra>"))
+                                text=subj_v,
+                                hovertemplate="<b>%{text}</b><br>Kinem=%{x:.3f}<br>Mobile=%{y:.3f}<extra></extra>"))
     mn_v = min(x_v.min(), y_v.min()); mx_v = max(x_v.max(), y_v.max())
     fig_sc.add_trace(go.Scatter(x=[mn_v,mx_v], y=[mn_v,mx_v], mode="lines",
                                 line=dict(color="#9e9e9e", dash="dash", width=1.2), name="Identidade"))
@@ -1709,7 +1722,7 @@ def render_sig_comparison_tab(sheets, sheet_names, g1_name, g2_name):
     # Clinical interpretation text
     changed = df_cmp[df_cmp["Status"].isin(["⚙️ Só Kinem","📱 Só Mobile"])]
     changed_list = "\n".join(f"  • {r['Métrica']}: {r['Status']} (d_K={r['d_Kinem']}, d_M={r['d_Mobile']})"
-                             for _, r in changed.iterrows()[:10])
+                             for _, r in changed.head(10).iterrows())
     interp_cmp = (
         f"Comparação de significância Kinem × Mobile:\n\n"
         f"• Variáveis significativas em AMBOS os dispositivos ({n_both}): "
@@ -1738,7 +1751,7 @@ def render_sig_comparison_tab(sheets, sheet_names, g1_name, g2_name):
 def _sig_table_html(results, label):
     """Gera tabela HTML de resultados ordenada por p-value."""
     sig_color = "#fff8e1"; rows_h = ""
-    for r in sorted(results, key=lambda x: x["p"]):
+    for r in sorted(results, key=lambda x: x["col"].lower()):
         sig = r["p"] < 0.05
         bg  = f'style="background:{sig_color}"' if sig else ""
         star = sig_stars(r["p"])
